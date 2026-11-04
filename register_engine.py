@@ -1,10 +1,10 @@
 """Standart AHU register listelerini cihaz konfigürasyonuna gore filtreler.
 
-Kullanicinin sectigi marka + adet disindaki fan bloklari (EBM, Danfoss,
-Ziehl-Abegg, WellDrive) ve tiklamadigi sicaklik/nem/CO2 sensor satirlari
-(o satirlarin CommAlarm'lari dahil) silinir; sabit satirlar (AHU start,
-batarya, SAF/EAF mantigi, BmsTemp_Hum, TempAVG, genel alarm satirlari)
-oldugu gibi kalir.
+Silinen satirlar: secilmeyen marka/adet disindaki fan bloklari (EBM, Danfoss,
+Ziehl-Abegg, WellDrive), tiklanmayan sicaklik-nem-CO2 sensor satirlari ve
+adetini asan damper (klape) motoru satirlari. Sabit kalan satirlar: AHU start,
+batarya, SAF/EAF mantigi, BmsTemp_Hum, TempAVG, DamperCont/BypassDmpCont ve
+genel alarm satirlari.
 """
 
 from __future__ import annotations
@@ -105,6 +105,43 @@ def object_label(obj: str) -> str:
     return OBJECT_LABELS.get(obj, obj)
 
 
+# Damper (klape) motorlari: "<Taraf>DmpMB_<Marka>[<unit eki>]"
+# ornek SupDmpMB_Siemens1 = ufleme tarafindaki 2. damper motoru
+DAMPER_RE = re.compile(r"^(?P<side>[A-Za-z]+)Dmp(?P<wire>MB)?_(?P<brand>[A-Za-z]+?)(?P<unit>\d*)$")
+
+SIDE_LABELS: dict[str, str] = {
+    "Sup": "Üfleme damper motoru",
+    "Fresh": "Taze hava damper motoru",
+    "Return": "Dönüş hava damper motoru",
+    "Ext": "Egzoz damper motoru",
+    "Mix": "Karışım hava damper motoru",
+    "ByPass": "By-pass damper motoru",
+}
+
+
+@dataclass
+class DamperGroup:
+    key: str  # "Sup|Siemens"
+    side: str
+    brand: str
+    label: str
+    max_units: int
+
+
+def classify_damper(name_cell: str | None) -> tuple[str, int] | None:
+    """Damper motoru satiriyse (grup anahtari, unite numarasi) dondurur."""
+    obj, _tok = parse_object_token(name_cell)
+    if obj is None:
+        return None
+    match = DAMPER_RE.match(obj)
+    if not match:
+        return None
+    side, brand = match.group("side"), match.group("brand")
+    suffix = match.group("unit")
+    unit = int(suffix) + 1 if suffix else 1
+    return (f"{side}|{brand}", unit)
+
+
 @dataclass
 class SensorGroup:
     obj: str
@@ -182,6 +219,55 @@ def list_sensor_groups(data_dir: Path) -> list[SensorGroup]:
     return list(merged.values())
 
 
+def _damper_sort_key(group: DamperGroup) -> tuple[int, str]:
+    order = list(SIDE_LABELS)
+    return (order.index(group.side) if group.side in order else len(order), group.brand)
+
+
+def _with_brand_suffix(groups: list[DamperGroup]) -> list[DamperGroup]:
+    sides = [g.side for g in groups]
+    for group in groups:
+        if sides.count(group.side) > 1:
+            group.label = f"{group.label} ({group.brand})"
+    return sorted(groups, key=_damper_sort_key)
+
+
+def detect_damper_groups(ws, name_col: str, header_row: int) -> list[DamperGroup]:
+    """Standart listedeki damper motoru gruplarini ve unite sayilarini bulur."""
+    units: dict[str, set[int]] = {}
+    for row in range(header_row + 1, ws.max_row + 1):
+        found = classify_damper(ws[f"{name_col}{row}"].value)
+        if found is None:
+            continue
+        key, unit = found
+        units.setdefault(key, set()).add(unit)
+    groups = [
+        DamperGroup(
+            key=key,
+            side=key.split("|")[0],
+            brand=key.split("|")[1],
+            label=SIDE_LABELS.get(key.split("|")[0], key.split("|")[0]),
+            max_units=max(used),
+        )
+        for key, used in units.items()
+    ]
+    return _with_brand_suffix(groups)
+
+
+def list_damper_groups(data_dir: Path) -> list[DamperGroup]:
+    """Iki protokol dosyasinda bulunan damper gruplarinin birlesimi."""
+    merged: dict[str, DamperGroup] = {}
+    for cfg in PROTOCOLS.values():
+        ws = load_workbook(data_dir / cfg["file"]).active
+        for group in detect_damper_groups(ws, cfg["name_col"], cfg["header_row"]):
+            cur = merged.get(group.key)
+            if cur is None or group.max_units > cur.max_units:
+                merged[group.key] = group
+    for group in merged.values():
+        group.label = SIDE_LABELS.get(group.side, group.side)
+    return _with_brand_suffix(list(merged.values()))
+
+
 @dataclass
 class RowClassification:
     brand: str
@@ -197,6 +283,8 @@ class FilterResult:
     removed_rows: int
     kept_fan_rows: int
     total_fan_rows: int
+    kept_damper_rows: int = 0
+    total_damper_rows: int = 0
     removed_by_group: dict[str, int] = field(default_factory=dict)
 
 
@@ -256,6 +344,7 @@ def filter_standard_list(
     exhaust_brand: str | None,
     exhaust_count: int,
     sensor_selection: dict[str, list[str]] | None = None,
+    damper_selection: dict[str, int] | None = None,
 ) -> FilterResult:
     cfg = PROTOCOLS[protocol]
     selections = {
@@ -272,14 +361,21 @@ def filter_standard_list(
     if sensor_selection is not None:
         registered = {g.obj: g for g in detect_sensor_groups(ws, name_col, cfg["header_row"])}
 
+    damper_groups: dict[str, DamperGroup] = {}
+    if damper_selection is not None:
+        damper_groups = {g.key: g for g in detect_damper_groups(ws, name_col, cfg["header_row"])}
+
     removed: list[int] = []
     removed_by_group: dict[str, int] = {}
     kept_fan_rows = 0
     total_fan_rows = 0
+    kept_damper_rows = 0
+    total_damper_rows = 0
 
     for row in range(first_data_row, ws.max_row + 1):
         value = ws[f"{name_col}{row}"].value
         info = classify_row(value)
+        damper_found = classify_damper(value) if damper_groups else None
         if info is not None:
             total_fan_rows += 1
             sel_brand, sel_count = selections[info.direction]
@@ -288,6 +384,13 @@ def filter_standard_list(
                 kept_fan_rows += 1
                 continue
             group = f"{BRANDS[info.brand]['label']} {cfg_label_direction(info.direction)} #{info.unit}"
+        elif damper_found is not None:
+            key, unit = damper_found
+            total_damper_rows += 1
+            if unit <= damper_selection.get(key, 0):
+                kept_damper_rows += 1
+                continue
+            group = f"{damper_groups[key].label} #{unit}"
         elif registered:
             obj, tok = parse_object_token(value)
             group_obj = registered.get(obj) if obj else None
@@ -322,6 +425,8 @@ def filter_standard_list(
         removed_rows=len(removed),
         kept_fan_rows=kept_fan_rows,
         total_fan_rows=total_fan_rows,
+        kept_damper_rows=kept_damper_rows,
+        total_damper_rows=total_damper_rows,
         removed_by_group=removed_by_group,
     )
     return result
@@ -340,6 +445,7 @@ def generate(
     exhaust_brand: str | None,
     exhaust_count: int,
     sensor_selection: dict[str, list[str]] | None = None,
+    damper_selection: dict[str, int] | None = None,
 ) -> list[FilterResult]:
     prefix = device_prefix.strip() or "Cihaz"
     results: list[FilterResult] = []
@@ -355,6 +461,7 @@ def generate(
                 exhaust_brand=exhaust_brand,
                 exhaust_count=exhaust_count,
                 sensor_selection=sensor_selection,
+                damper_selection=damper_selection,
             )
         )
     return results

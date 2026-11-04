@@ -7,10 +7,13 @@ from register_engine import (
     BRANDS,
     PROTOCOLS,
     RowClassification,
+    classify_damper,
     classify_row,
+    detect_damper_groups,
     detect_sensor_groups,
     filter_standard_list,
     generate,
+    list_damper_groups,
     list_sensor_groups,
     parse_object_token,
 )
@@ -209,7 +212,7 @@ def test_list_sensor_groups_unions_both_protocols():
     assert {c for c, _ in groups["ExchngrLeaveTmpSensorMB"].signals} == {"tmp", "hum", "co2"}
 
 
-def _sensor_run(tmp_path, protocol, sensor_selection, out_name=None, **fan):
+def _sensor_run(tmp_path, protocol, sensor_selection, out_name=None, damper_selection=None, **fan):
     cfg = PROTOCOLS[protocol]
     kwargs = {
         "protocol": protocol,
@@ -222,6 +225,7 @@ def _sensor_run(tmp_path, protocol, sensor_selection, out_name=None, **fan):
     }
     kwargs.update(fan)
     kwargs["sensor_selection"] = sensor_selection
+    kwargs["damper_selection"] = damper_selection
     return filter_standard_list(**kwargs)
 
 
@@ -288,8 +292,104 @@ def test_generate_passes_sensor_selection(tmp_path):
         sensor_selection={"Room Temp": ["tmp"]},
     )
     for res in results:
-        protocol = "modbus" if "Modbus" in res.protocol else "bacnet"
+        protocol = "modbus" if res.protocol == "MODBUS" else "bacnet"
         names = _names(res, protocol)
         assert "Room Temp1" not in names
-        if protocol == "modbus":
-            assert r"Room Temp\Room Temp" in names
+        assert r"Room Temp\Room Temp" in names
+
+
+# ---------- damper (klape) motoru algılama ve seçim ----------
+
+# Her iki listede de 6 taraf x (1 pozisyon + 4 motor x 4 satır) = 102 satır
+EXPECTED_TOTAL_DAMPER_ROWS = 102
+DAMPER_SIDES = {"Sup", "Fresh", "Return", "Ext", "Mix", "ByPass"}
+
+
+@pytest.mark.parametrize(
+    "cell,expected",
+    [
+        (r"SupDmpMB_Siemens\Dmp_Pos", ("Sup|Siemens", 1)),
+        (r"SupDmpMB_Siemens1\SupDmpMB_Siemens1.CommAlarm", ("Sup|Siemens", 2)),
+        (r"ByPassDmpMB_Siemens3\ByPassDmpMB_Siemens3.Mechanical_fault", ("ByPass|Siemens", 4)),
+        (r"FreshDmpMB_Siemens2\Dmp_Fdb=60420", ("Fresh|Siemens", 3)),
+        (r"DamperCont\DmpContTypeSel", None),
+        (r"BypassDmpCont\BypassRecMod", None),
+        (r"SupplyAirSensorMB\TmpVal", None),
+        (r"EBMFanCont\SAF Ebm RPM", None),
+    ],
+)
+def test_classify_damper(cell, expected):
+    assert classify_damper(cell) == expected
+
+
+@pytest.mark.parametrize("protocol", ["modbus", "bacnet"])
+def test_detect_damper_groups(protocol):
+    cfg = PROTOCOLS[protocol]
+    ws = load_workbook(DATA_DIR / cfg["file"]).active
+    groups = detect_damper_groups(ws, cfg["name_col"], cfg["header_row"])
+    assert {g.side for g in groups} == DAMPER_SIDES
+    assert all(g.max_units == 4 for g in groups)
+    assert all(g.brand == "Siemens" for g in groups)
+    assert groups[0].label == "Üfleme damper motoru"
+
+
+def test_list_damper_groups_covers_both_protocols():
+    groups = list_damper_groups(DATA_DIR)
+    assert len(groups) == 6
+    assert {g.key for g in groups} == {f"{s}|Siemens" for s in DAMPER_SIDES}
+
+
+def test_damper_full_selection_removes_nothing_extra(tmp_path):
+    all_units = {g.key: g.max_units for g in list_damper_groups(DATA_DIR)}
+    res = _sensor_run(tmp_path, "modbus", None, damper_selection=all_units)
+    assert res.total_damper_rows == EXPECTED_TOTAL_DAMPER_ROWS
+    assert res.kept_damper_rows == EXPECTED_TOTAL_DAMPER_ROWS
+    assert res.removed_rows == EXPECTED_TOTAL_FAN_ROWS - 64
+
+
+def test_damper_zero_selection_removes_whole_block(tmp_path):
+    res = _sensor_run(tmp_path, "modbus", None, damper_selection={}, out_name="none.xlsx")
+    assert res.kept_damper_rows == 0
+    assert res.removed_rows == (EXPECTED_TOTAL_FAN_ROWS - 64) + EXPECTED_TOTAL_DAMPER_ROWS
+    names = _names(res, "modbus")
+    assert "DmpMB_Siemens" not in names
+    # damper kontrol/parametre satirlari (DamperCont, BypassDmpCont) sabit kalir
+    assert r"DamperCont\DmpContTypeSel" in names
+    assert r"BypassDmpCont\BypassRecMod" in names
+
+
+def test_damper_unit_counts_per_side(tmp_path):
+    selection = {"Sup|Siemens": 2, "Fresh|Siemens": 1, "Return|Siemens": 4,
+                 "Ext|Siemens": 0, "Mix|Siemens": 3, "ByPass|Siemens": 4}
+    res = _sensor_run(tmp_path, "modbus", None, damper_selection=selection, out_name="mixed.xlsx")
+    # taraf basina: 1 pozisyon + N motor x 4 satir
+    assert res.kept_damper_rows == (1 + 8) + (1 + 4) + (1 + 16) + 0 + (1 + 12) + (1 + 16)
+    assert res.removed_rows == (EXPECTED_TOTAL_FAN_ROWS - 64) + (EXPECTED_TOTAL_DAMPER_ROWS - res.kept_damper_rows)
+    names = _names(res, "modbus")
+    assert r"SupDmpMB_Siemens1\Dmp_Fdb" in names
+    assert r"SupDmpMB_Siemens2\Dmp_Fdb" not in names
+    assert r"FreshDmpMB_Siemens\Dmp_Pos" in names
+    assert r"FreshDmpMB_Siemens1\FreshDmpMB_Siemens1.CommAlarm" not in names
+    assert "ExtDmpMB_Siemens" not in names
+    assert res.removed_by_group["Egzoz damper motoru #1"] == 5
+    assert res.removed_by_group["Taze hava damper motoru #2"] == 4
+
+
+def test_generate_with_damper_selection(tmp_path):
+    results = generate(
+        data_dir=DATA_DIR,
+        output_dir=tmp_path,
+        device_prefix="AHU-07",
+        supply_brand="ziehl",
+        supply_count=1,
+        exhaust_brand=None,
+        exhaust_count=0,
+        sensor_selection={g.obj: [c for c, _ in g.signals] for g in list_sensor_groups(DATA_DIR)},
+        damper_selection={"Sup|Siemens": 1, "ByPass|Siemens": 2},
+    )
+    for res in results:
+        protocol = "modbus" if res.protocol == "MODBUS" else "bacnet"
+        assert res.kept_damper_rows == (1 + 4) + (1 + 8)
+        names = _names(res, protocol)
+        assert r"ByPassDmpMB_Siemens1" in names
+        assert "MixDmpMB_Siemens" not in names

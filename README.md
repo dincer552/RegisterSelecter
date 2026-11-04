@@ -14,8 +14,13 @@ cihaza özel Excel listeleri üreten Windows masüstü programi.
 2. **2. Fan Secimi** – **Besleme fan markasi**: `ebm-papst`, `Danfoss`, `Ziehl-Abegg`,
    `WellDrive` veya `Yok`, sonra **Adet** (ebm-papst ve Ziehl-Abegg 1-4,
    Danfoss ve WellDrive 1-2). Ayni secim **Egzoz fan markasi** icin de yapilir.
-3. **3. Cikti** – cihaz adi (örn. `AHU-01`) ve cikti klasörü.
-4. **EXCEL LISTELERINI OLUSTUR** butonuna bas.
+3. **3. Damper (Klape) Motorlari** – damper motorlari da standart Excel'den
+   otomatik listelenir (Ufleme, Taze hava, Donus, Egzoz, Karisim, By-pass).
+   Her taraf için **tik kutusu + motor adedi** (1-4). Tik kaldirilan tarafin
+   pozisyon (`Dmp_Pos`), geri bildirim (`Dmp_Fdb`) ve
+   CommAlarm/FeedbackAlarm/Mechanical_fault satirlari tamamen silinir.
+4. **4. Cikti** – cihaz adi (örn. `AHU-01`) ve cikti klasörü.
+5. **EXCEL LISTELERINI OLUSTUR** butonuna bas.
 
 Cikti: `AHU-01_Modbus_Reg_List.xlsx` ve `AHU-01_BACnet_Reg_List.xlsx`
 
@@ -26,6 +31,8 @@ Cikti: `AHU-01_Modbus_Reg_List.xlsx` ve `AHU-01_BACnet_Reg_List.xlsx`
   silinir.
 - Tik kaldirilan sensorün ölçü satirlari silinir; hicbir sinyali secilmeyen
   sensorün **CommAlarm** satiri da silinir (en az bir sinyal seciliyorsa alarm kalir).
+- Secilen adetten fazla damper motorlarinin satirlari ve tik kaldirilan tarafin
+  tum satirlari silinir. `DamperCont` / `BypassDmpCont` parametre satirlari silinmez.
 - Sabit satirlar her zaman korunur: AHU start/stop, batarya, SAF/EAF kontrol
   mantigi, genel alarm satirlari, `BmsTemp_Hum`, `TempAVG`, `Hum_Mod_Sel`.
 
@@ -41,6 +48,21 @@ Cikti: `AHU-01_Modbus_Reg_List.xlsx` ve `AHU-01_BACnet_Reg_List.xlsx`
 Sensor listesi koda gömülü degildir; program standart Excel'i okuyarak
 `Nesne\TmpVal`, `Nesne\HumVal`, `Nesne\CO2Val`, `Nesne\EntVal`, `Nesne\AbsHum`
 satirlarini bulur. Standart listeye yeni sensor eklersen programda otomatik görünür.
+
+## Damper motoru bloklari (standart listeden otomatik)
+
+| Taraf | Besleme nesne adi | Motorlar |
+|---|---|---|
+| Ufleme | `SupDmpMB_Siemens..3` | 1-4 |
+| Taze hava | `FreshDmpMB_Siemens..3` | 1-4 |
+| Donus | `ReturnDmpMB_Siemens..3` | 1-4 |
+| Egzoz | `ExtDmpMB_Siemens..3` | 1-4 |
+| Karisim | `MixDmpMB_Siemens..3` | 1-4 |
+| By-pass | `ByPassDmpMB_Siemens..3` | 1-4 |
+
+Her motor 4 satir (Dmp_Fdb + CommAlarm + FeedbackAlarm + Mechanical_fault),
+tarafin kendisi 1 `Dmp_Pos` satiri -> toplam **102 satir/protokol**.
+`<Taraf>DmpMB_<Marka>` kalibina uyan yeni markalar da otomatik listelenir.
 
 ## Marka bloklari (standart listedeki karsiliklari)
 

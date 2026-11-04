@@ -10,7 +10,7 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
 import updater
-from register_engine import BRANDS, SensorGroup, generate, list_sensor_groups
+from register_engine import BRANDS, DamperGroup, SensorGroup, generate, list_damper_groups, list_sensor_groups
 from version import __version__
 
 APP_TITLE = "REGISTER SELECTER"
@@ -75,6 +75,7 @@ class App(tk.Tk):
         body = self.scroll.inner
         self._build_sensor_section(body)
         self._build_fan_section(body)
+        self._build_damper_section(body)
         self._build_output_section(body)
         self._load_config()
 
@@ -242,7 +243,65 @@ class App(tk.Tk):
             if not current.isdigit() or not 1 <= int(current) <= max_units:
                 count_var.set("1")
 
-    # ---------- section 3: output ----------
+    # ---------- section 3: dampers ----------
+    def _build_damper_section(self, parent) -> None:
+        sec = tk.LabelFrame(parent, text=" 3. Damper (Klape) Motorlari ", bg="white", font=("Segoe UI", 11, "bold"), labelanchor="nw")
+        sec.pack(fill="x", padx=2, pady=6)
+
+        self.damper_vars: dict[str, tuple[tk.BooleanVar, tk.StringVar]] = {}
+        self.damper_groups: list[DamperGroup] = []
+        try:
+            self.damper_groups = list_damper_groups(resource_path("data"))
+        except Exception as exc:  # noqa: BLE001
+            tk.Label(sec, text=f"Standart liste okunamadi: {exc}", bg="white", fg=RED).pack(anchor="w", padx=10, pady=8)
+            return
+
+        head = tk.Frame(sec, bg="white")
+        head.pack(fill="x", padx=8, pady=(6, 2))
+        tk.Label(
+            head,
+            text="Her tarafa kac damper motoru baglanacagini sec. Sayilan motorlardan fazlasi ve "
+            "secilmeyen tarafin pozisyon/feedback/alarm satirlari silinir.",
+            bg="white", fg="#4b5563", font=("Segoe UI", 9), wraplength=760, justify="left", anchor="w",
+        ).pack(side="left")
+
+        grid = tk.Frame(sec, bg="white")
+        grid.pack(fill="x", padx=10, pady=(4, 10))
+        tk.Label(grid, text="Taraf", bg="white", font=("Segoe UI", 8, "bold")).grid(row=0, column=0, sticky="w", padx=4)
+        tk.Label(grid, text="Motor adet", bg="white", font=("Segoe UI", 8, "bold")).grid(row=0, column=1, sticky="w", padx=4)
+        self.damper_spins: dict[str, tk.Spinbox] = {}
+        for index, group in enumerate(self.damper_groups, start=1):
+            enabled = tk.BooleanVar(value=True)
+            count = tk.StringVar(value="1")
+            tk.Checkbutton(
+                grid, text=group.label, variable=enabled, bg="white", font=("Segoe UI", 10),
+                activebackground="white", selectcolor="white",
+                command=lambda g=group, v=enabled: self._on_damper_toggle(g, v),
+            ).grid(row=index, column=0, sticky="w", padx=4, pady=2)
+            spin = tk.Spinbox(
+                grid, values=[str(i) for i in range(1, group.max_units + 1)], textvariable=count,
+                width=5, font=("Segoe UI", 10), justify="center",
+            )
+            spin.grid(row=index, column=1, sticky="w", padx=4, pady=2)
+            tk.Label(grid, text=f"(max {group.max_units})", bg="white", fg=GRAY, font=("Segoe UI", 8)).grid(row=index, column=2, sticky="w")
+            self.damper_vars[group.key] = (enabled, count)
+            self.damper_spins[group.key] = spin
+
+    def _on_damper_toggle(self, group: DamperGroup, enabled: tk.BooleanVar) -> None:
+        self.damper_spins[group.key].configure(state="normal" if enabled.get() else "disabled")
+
+    def _damper_selection(self) -> dict[str, int]:
+        selection: dict[str, int] = {}
+        for group in self.damper_groups:
+            enabled, count = self.damper_vars[group.key]
+            if not enabled.get():
+                selection[group.key] = 0
+                continue
+            value = int(count.get()) if count.get().isdigit() else 1
+            selection[group.key] = min(max(value, 1), group.max_units)
+        return selection
+
+    # ---------- section 4: output ----------
     def _build_output_section(self, parent) -> None:
         sec = tk.LabelFrame(parent, text=" 3. Cikti ", bg="white", font=("Segoe UI", 11, "bold"), labelanchor="nw")
         sec.pack(fill="x", padx=2, pady=6)
@@ -310,9 +369,11 @@ class App(tk.Tk):
         supply_key = self._selected_key(self.supply_combo)
         exhaust_key = self._selected_key(self.exhaust_combo)
         sensors = self._sensor_selection()
+        dampers = self._damper_selection()
         any_sensor = any(sensors.values()) if sensors else True
-        if not any_sensor and not supply_key and not exhaust_key:
-            messagebox.showwarning("Secim yok", "Sensor, besleme ve egzoz icin hic secim yok.")
+        any_damper = any(dampers.values()) if dampers else True
+        if not any_sensor and not any_damper and not supply_key and not exhaust_key:
+            messagebox.showwarning("Secim yok", "Sensor, damper, besleme ve egzoz icin hic secim yok.")
             return
 
         count = int(self.supply_count_var.get() or 1) if supply_key else 0
@@ -335,6 +396,7 @@ class App(tk.Tk):
                 exhaust_brand=exhaust_key,
                 exhaust_count=ecount,
                 sensor_selection=sensors,
+                damper_selection=dampers,
             )
         except Exception as exc:  # noqa: BLE001
             messagebox.showerror("Hata", f"Listeler olusturulamadi:\n{exc}")
@@ -342,24 +404,40 @@ class App(tk.Tk):
         else:
             for res in results:
                 self.log_line(
-                    f"[{res.protocol}] fan {res.kept_fan_rows}/{res.total_fan_rows} satir, "
+                    f"[{res.protocol}] fan {res.kept_fan_rows}/{res.total_fan_rows}, "
+                    f"damper {res.kept_damper_rows}/{res.total_damper_rows} satir, "
                     f"toplam {res.removed_rows} satir silindi -> {res.output}"
                 )
-            brand_labels = {b["label"] for b in BRANDS.values()}
-            sensor_groups = {
-                k: v
-                for r in results
-                for k, v in r.removed_by_group.items()
-                if not any(bl in k for bl in brand_labels)
-            }
+            buckets = self._removed_groups(results)
             self.log_line("")
-            self.log_line("Silinen sensor gruplari: " + (", ".join(
-                f"{k} ({v})" for k, v in sorted(sensor_groups.items())
-            ) or "-"))
+            for title, key in (("Silinen sensor gruplari", "sensor"), ("Silinen damper motorlari", "damper"), ("Silinen fan bloklari", "fan")):
+                self.log_line(f"{title}: " + (", ".join(
+                    f"{name} ({count})" for name, count in sorted(buckets[key].items())
+                ) or "-"))
             messagebox.showinfo("Tamam", f"{results[0].output.parent} klasorunde 2 liste olusturuldu.")
         finally:
             self.gen_btn.configure(state="normal")
             self._save_config()
+
+    def _removed_groups(self, results) -> dict[str, dict[str, int]]:
+        """Silinen satirlari sensor / damper / fan olarak siniflandirir."""
+        damper_labels = {g.label for g in self.damper_groups}
+        sensor_labels = {g.label for g in self.sensor_groups}
+        brand_labels = {b["label"] for b in BRANDS.values()}
+        buckets: dict[str, dict[str, int]] = {"sensor": {}, "damper": {}, "fan": {}}
+        for res in results:
+            for name, count in res.removed_by_group.items():
+                if any(name.startswith(lbl) for lbl in damper_labels):
+                    kind = "damper"
+                elif any(name.startswith(lbl) for lbl in sensor_labels):
+                    kind = "sensor"
+                elif any(bl in name for bl in brand_labels):
+                    kind = "fan"
+                else:
+                    continue
+                merged = buckets[kind]
+                merged[name] = merged.get(name, 0) + count
+        return buckets
 
     # ---------- update ----------
     def _set_status(self, text: str, color: str) -> None:
@@ -466,6 +544,16 @@ class App(tk.Tk):
             chosen = set(saved)
             for code, var in by_code.items():
                 var.set(code in chosen)
+        dampers = cfg.get("dampers") or {}
+        for group in self.damper_groups:
+            saved = dampers.get(group.key)
+            if saved is None:
+                continue
+            enabled, count = self.damper_vars[group.key]
+            value = int(saved)
+            enabled.set(value > 0)
+            count.set(str(min(max(value, 1), group.max_units)))
+            self._on_damper_toggle(group, enabled)
 
     def _save_config(self) -> None:
         cfg = {
@@ -476,6 +564,7 @@ class App(tk.Tk):
             "device": self.device_var.get(),
             "outdir": self.outdir_var.get(),
             "sensors": {obj: [c for c, v in by.items() if v.get()] for obj, by in self.sensor_vars.items()},
+            "dampers": self._damper_selection(),
         }
         try:
             config_file().write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
