@@ -10,7 +10,16 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
 import updater
-from register_engine import BRANDS, DamperGroup, SensorGroup, generate, list_damper_groups, list_sensor_groups
+from register_engine import (
+    BRANDS,
+    DamperGroup,
+    SensorGroup,
+    StageGroup,
+    generate,
+    list_damper_groups,
+    list_sensor_groups,
+    list_stage_groups,
+)
 from version import __version__
 
 APP_TITLE = "REGISTER SELECTER"
@@ -76,6 +85,7 @@ class App(tk.Tk):
         self._build_sensor_section(body)
         self._build_fan_section(body)
         self._build_damper_section(body)
+        self._build_stage_section(body)
         self._build_output_section(body)
         self._load_config()
 
@@ -301,9 +311,50 @@ class App(tk.Tk):
             selection[group.key] = min(max(value, 1), group.max_units)
         return selection
 
-    # ---------- section 4: output ----------
+    # ---------- section 4: kademeli gruplar (isitici / DX) ----------
+    def _build_stage_section(self, parent) -> None:
+        sec = tk.LabelFrame(parent, text=" 4. Isitici / DX Sogutucu Kademeleri ", bg="white", font=("Segoe UI", 11, "bold"), labelanchor="nw")
+        sec.pack(fill="x", padx=2, pady=6)
+
+        self.stage_vars: dict[str, tk.StringVar] = {}
+        self.stage_groups: list[StageGroup] = []
+        try:
+            self.stage_groups = list_stage_groups(resource_path("data"))
+        except Exception as exc:  # noqa: BLE001
+            tk.Label(sec, text=f"Standart liste okunamadi: {exc}", bg="white", fg=RED).pack(anchor="w", padx=10, pady=8)
+            return
+
+        tk.Label(
+            sec,
+            text="Kademe sayisi 0 ise o grubun tum satirlari silinir. Kademe sayisini asan "
+            "DxAlarm/DXDefrost ve HeaterN_ok satirlari silinir; mod/durum/kapasite/yuksek sicaklik "
+            "alarm satirlari en az bir kademe seciliyse kalir.",
+            bg="white", fg="#4b5563", font=("Segoe UI", 9), wraplength=760, justify="left", anchor="w",
+        ).pack(fill="x", padx=10, pady=(6, 2))
+
+        grid = tk.Frame(sec, bg="white")
+        grid.pack(fill="x", padx=10, pady=(4, 10))
+        for index, group in enumerate(self.stage_groups, start=1):
+            count = tk.StringVar(value=str(group.max_stages))
+            tk.Label(grid, text=group.label, bg="white", font=("Segoe UI", 10)).grid(row=index, column=0, sticky="w", padx=4, pady=2)
+            tk.Spinbox(
+                grid, values=[str(i) for i in range(0, group.max_stages + 1)], textvariable=count,
+                width=5, font=("Segoe UI", 10), justify="center",
+            ).grid(row=index, column=1, sticky="w", padx=4, pady=2)
+            tk.Label(grid, text=f"0 = Yok, max {group.max_stages}", bg="white", fg=GRAY, font=("Segoe UI", 8)).grid(row=index, column=2, sticky="w")
+            self.stage_vars[group.obj] = count
+
+    def _stage_selection(self) -> dict[str, int]:
+        selection: dict[str, int] = {}
+        for group in self.stage_groups:
+            raw = self.stage_vars[group.obj].get()
+            value = int(raw) if raw.isdigit() else group.max_stages
+            selection[group.obj] = min(max(value, 0), group.max_stages)
+        return selection
+
+    # ---------- section 5: output ----------
     def _build_output_section(self, parent) -> None:
-        sec = tk.LabelFrame(parent, text=" 3. Cikti ", bg="white", font=("Segoe UI", 11, "bold"), labelanchor="nw")
+        sec = tk.LabelFrame(parent, text=" 5. Cikti ", bg="white", font=("Segoe UI", 11, "bold"), labelanchor="nw")
         sec.pack(fill="x", padx=2, pady=6)
 
         self.device_var = tk.StringVar(value="AHU-01")
@@ -370,10 +421,12 @@ class App(tk.Tk):
         exhaust_key = self._selected_key(self.exhaust_combo)
         sensors = self._sensor_selection()
         dampers = self._damper_selection()
+        stages = self._stage_selection()
         any_sensor = any(sensors.values()) if sensors else True
         any_damper = any(dampers.values()) if dampers else True
-        if not any_sensor and not any_damper and not supply_key and not exhaust_key:
-            messagebox.showwarning("Secim yok", "Sensor, damper, besleme ve egzoz icin hic secim yok.")
+        any_stage = any(stages.values()) if stages else True
+        if not (any_sensor or any_damper or any_stage or supply_key or exhaust_key):
+            messagebox.showwarning("Secim yok", "Sensor, damper, kademe, besleme ve egzoz icin hic secim yok.")
             return
 
         count = int(self.supply_count_var.get() or 1) if supply_key else 0
@@ -397,6 +450,7 @@ class App(tk.Tk):
                 exhaust_count=ecount,
                 sensor_selection=sensors,
                 damper_selection=dampers,
+                stage_selection=stages,
             )
         except Exception as exc:  # noqa: BLE001
             messagebox.showerror("Hata", f"Listeler olusturulamadi:\n{exc}")
@@ -405,12 +459,18 @@ class App(tk.Tk):
             for res in results:
                 self.log_line(
                     f"[{res.protocol}] fan {res.kept_fan_rows}/{res.total_fan_rows}, "
-                    f"damper {res.kept_damper_rows}/{res.total_damper_rows} satir, "
+                    f"damper {res.kept_damper_rows}/{res.total_damper_rows}, "
+                    f"kademe {res.kept_stage_rows}/{res.total_stage_rows} satir, "
                     f"toplam {res.removed_rows} satir silindi -> {res.output}"
                 )
             buckets = self._removed_groups(results)
             self.log_line("")
-            for title, key in (("Silinen sensor gruplari", "sensor"), ("Silinen damper motorlari", "damper"), ("Silinen fan bloklari", "fan")):
+            for title, key in (
+                ("Silinen sensor gruplari", "sensor"),
+                ("Silinen damper motorlari", "damper"),
+                ("Silinen kademe satirlari", "stage"),
+                ("Silinen fan bloklari", "fan"),
+            ):
                 self.log_line(f"{title}: " + (", ".join(
                     f"{name} ({count})" for name, count in sorted(buckets[key].items())
                 ) or "-"))
@@ -423,14 +483,17 @@ class App(tk.Tk):
         """Silinen satirlari sensor / damper / fan olarak siniflandirir."""
         damper_labels = {g.label for g in self.damper_groups}
         sensor_labels = {g.label for g in self.sensor_groups}
+        stage_labels = {g.label for g in self.stage_groups}
         brand_labels = {b["label"] for b in BRANDS.values()}
-        buckets: dict[str, dict[str, int]] = {"sensor": {}, "damper": {}, "fan": {}}
+        buckets: dict[str, dict[str, int]] = {"sensor": {}, "damper": {}, "stage": {}, "fan": {}}
         for res in results:
             for name, count in res.removed_by_group.items():
                 if any(name.startswith(lbl) for lbl in damper_labels):
                     kind = "damper"
                 elif any(name.startswith(lbl) for lbl in sensor_labels):
                     kind = "sensor"
+                elif any(name.startswith(lbl) for lbl in stage_labels):
+                    kind = "stage"
                 elif any(bl in name for bl in brand_labels):
                     kind = "fan"
                 else:
@@ -554,6 +617,12 @@ class App(tk.Tk):
             enabled.set(value > 0)
             count.set(str(min(max(value, 1), group.max_units)))
             self._on_damper_toggle(group, enabled)
+        stages = cfg.get("stages") or {}
+        for group in self.stage_groups:
+            saved = stages.get(group.obj)
+            if saved is None:
+                continue
+            self.stage_vars[group.obj].set(str(min(max(int(saved), 0), group.max_stages)))
 
     def _save_config(self) -> None:
         cfg = {
@@ -565,6 +634,7 @@ class App(tk.Tk):
             "outdir": self.outdir_var.get(),
             "sensors": {obj: [c for c, v in by.items() if v.get()] for obj, by in self.sensor_vars.items()},
             "dampers": self._damper_selection(),
+            "stages": self._stage_selection(),
         }
         try:
             config_file().write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")

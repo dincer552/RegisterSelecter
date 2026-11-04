@@ -11,10 +11,12 @@ from register_engine import (
     classify_row,
     detect_damper_groups,
     detect_sensor_groups,
+    detect_stage_groups,
     filter_standard_list,
     generate,
     list_damper_groups,
     list_sensor_groups,
+    list_stage_groups,
     parse_object_token,
 )
 
@@ -212,7 +214,8 @@ def test_list_sensor_groups_unions_both_protocols():
     assert {c for c, _ in groups["ExchngrLeaveTmpSensorMB"].signals} == {"tmp", "hum", "co2"}
 
 
-def _sensor_run(tmp_path, protocol, sensor_selection, out_name=None, damper_selection=None, **fan):
+def _sensor_run(tmp_path, protocol, sensor_selection, out_name=None, damper_selection=None,
+                stage_selection=None, **fan):
     cfg = PROTOCOLS[protocol]
     kwargs = {
         "protocol": protocol,
@@ -226,6 +229,7 @@ def _sensor_run(tmp_path, protocol, sensor_selection, out_name=None, damper_sele
     kwargs.update(fan)
     kwargs["sensor_selection"] = sensor_selection
     kwargs["damper_selection"] = damper_selection
+    kwargs["stage_selection"] = stage_selection
     return filter_standard_list(**kwargs)
 
 
@@ -393,3 +397,74 @@ def test_generate_with_damper_selection(tmp_path):
         names = _names(res, protocol)
         assert r"ByPassDmpMB_Siemens1" in names
         assert "MixDmpMB_Siemens" not in names
+
+
+# ---------- isitici / DX kademe secimi ----------
+
+# DXControl 24 + ElectricalHeater 5 + PreElectricalHeater 5
+EXPECTED_TOTAL_STAGE_ROWS = 34
+
+
+@pytest.mark.parametrize("protocol", ["modbus", "bacnet"])
+def test_detect_stage_groups(protocol):
+    cfg = PROTOCOLS[protocol]
+    ws = load_workbook(DATA_DIR / cfg["file"]).active
+    groups = {g.obj: g for g in detect_stage_groups(ws, cfg["name_col"], cfg["header_row"])}
+    assert groups["DXControl"].max_stages == 10
+    assert set(groups["DXControl"].general_tokens) == {"DX_mode", "DX_Status1", "CapValuee", "CapValuee1"}
+    assert groups["ElectricalHeater"].max_stages == 3
+    assert set(groups["ElectricalHeater"].general_tokens) == {"HeaterStage", "HighTempAlarm"}
+    assert groups["PreElectricalHeater"].max_stages == 3
+    assert "PreHighTempAlarm" in groups["PreElectricalHeater"].general_tokens
+    # DX: 10 kademe x 2 satir + 4 genel = 24 ; isiticilar: 3 kademe + 2 genel = 5
+    row_counts = {"DXControl": 24, "ElectricalHeater": 5, "PreElectricalHeater": 5}
+    assert sum(row_counts[g.obj] for g in groups.values()) == EXPECTED_TOTAL_STAGE_ROWS
+
+
+def test_list_stage_groups_labels():
+    groups = {g.obj: g for g in list_stage_groups(DATA_DIR)}
+    assert list(groups) == ["DXControl", "ElectricalHeater", "PreElectricalHeater"]
+    assert groups["DXControl"].label == "DX soğutucu kademe sayısı"
+
+
+def test_stage_full_selection_keeps_rows(tmp_path):
+    all_stages = {g.obj: g.max_stages for g in list_stage_groups(DATA_DIR)}
+    res = _sensor_run(tmp_path, "modbus", None, stage_selection=all_stages)
+    assert res.total_stage_rows == EXPECTED_TOTAL_STAGE_ROWS
+    assert res.kept_stage_rows == EXPECTED_TOTAL_STAGE_ROWS
+    assert res.removed_rows == EXPECTED_TOTAL_FAN_ROWS - 64
+
+
+def test_stage_zero_selection_removes_all(tmp_path):
+    res = _sensor_run(tmp_path, "bacnet", None, stage_selection={}, out_name="ba.xlsx")
+    assert res.kept_stage_rows == 0
+    assert res.removed_rows == (EXPECTED_TOTAL_FAN_ROWS - 64) + EXPECTED_TOTAL_STAGE_ROWS
+    names = _names(res, "bacnet")
+    for token in ("DXControl", "ElectricalHeater", "PreElectricalHeater"):
+        assert token not in names
+
+
+def test_stage_partial_counts(tmp_path):
+    selection = {"DXControl": 2, "ElectricalHeater": 1, "PreElectricalHeater": 0}
+    res = _sensor_run(tmp_path, "modbus", None, stage_selection=selection, out_name="part.xlsx")
+    # DX: 4 genel + 2 kademe x 2 satir ; EH: 2 genel + 1 kademe ; On isitici: hicbir sey
+    assert res.kept_stage_rows == (4 + 4) + (2 + 1)
+    names = _names(res, "modbus")
+    assert r"DXControl\DXControl.Dx2Alarm" in names
+    assert r"DXControl\DXControl.DX3Defrost" not in names
+    assert r"DXControl\DX_mode" in names
+    assert r"DXControl\CapValuee1" in names
+    assert r"ElectricalHeater\Heater1_ok" in names
+    assert r"ElectricalHeater\Heater2_ok" not in names
+    assert r"ElectricalHeater\HighTempAlarm" in names
+    assert "PreElectricalHeater" not in names
+    assert res.removed_by_group["DX soğutucu kademe sayısı #10"] == 2
+    assert res.removed_by_group["Ön elektrikli ısıtıcı kademe sayısı - genel satirlar"] == 2
+
+
+def test_stage_selection_does_not_touch_sensors(tmp_path):
+    selection = {"DXControl": 1, "ElectricalHeater": 0, "PreElectricalHeater": 0}
+    res = _sensor_run(tmp_path, "modbus", None, stage_selection=selection, out_name="onlystage.xlsx")
+    names = _names(res, "modbus")
+    assert r"SupplyAirSensorMB\TmpVal" in names
+    assert r"SupDmpMB_Siemens\Dmp_Pos" in names

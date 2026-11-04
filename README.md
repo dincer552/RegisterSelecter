@@ -19,8 +19,15 @@ cihaza özel Excel listeleri üreten Windows masüstü programi.
    Her taraf için **tik kutusu + motor adedi** (1-4). Tik kaldirilan tarafin
    pozisyon (`Dmp_Pos`), geri bildirim (`Dmp_Fdb`) ve
    CommAlarm/FeedbackAlarm/Mechanical_fault satirlari tamamen silinir.
-4. **4. Cikti** – cihaz adi (örn. `AHU-01`) ve cikti klasörü.
-5. **EXCEL LISTELERINI OLUSTUR** butonuna bas.
+4. **4. Isitici / DX Sogutucu Kademeleri** – kademe sayisi girilir (0 = Yok):
+   - `DX sogutucu kademe sayisi` 0-10: DxN Alarm + DXN Defrost satirlari sayiya
+     gore silinir. `DX_mode`, `DX_Status1`, `CapValuee`, `CapValuee1` genel
+     satirlari kademe >= 1 ise kalir.
+   - `Elektrikli isitici` ve `On elektrikli isitici` kademe sayisi 0-3:
+     `Heater1/2/3_ok` sayiya gore silinir; `HeaterStage` + `HighTempAlarm`
+     kademe >= 1 ise kalir.
+5. **5. Cikti** – cihaz adi (örn. `AHU-01`) ve cikti klasörü.
+6. **EXCEL LISTELERINI OLUSTUR** butonuna bas.
 
 Cikti: `AHU-01_Modbus_Reg_List.xlsx` ve `AHU-01_BACnet_Reg_List.xlsx`
 
@@ -33,6 +40,8 @@ Cikti: `AHU-01_Modbus_Reg_List.xlsx` ve `AHU-01_BACnet_Reg_List.xlsx`
   sensorün **CommAlarm** satiri da silinir (en az bir sinyal seciliyorsa alarm kalir).
 - Secilen adetten fazla damper motorlarinin satirlari ve tik kaldirilan tarafin
   tum satirlari silinir. `DamperCont` / `BypassDmpCont` parametre satirlari silinmez.
+- Isitici/DX kademelerinde secilen kademe sayisini asan satirlar silinir;
+  kademe 0 ise grubun genel satirlari da silinir.
 - Sabit satirlar her zaman korunur: AHU start/stop, batarya, SAF/EAF kontrol
   mantigi, genel alarm satirlari, `BmsTemp_Hum`, `TempAVG`, `Hum_Mod_Sel`.
 

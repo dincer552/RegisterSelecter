@@ -128,6 +128,84 @@ class DamperGroup:
     max_units: int
 
 
+# Kademeli gruplar (DX sogutucu, elektrikli isiticilar). Kademe tokenlari
+# excel'deki yazim farklarina gore regex ile taninir; o gruba ait diger
+# satirlar (mod/durum/kapasite/alarm) en az bir kademe secildiginde kalir.
+STAGE_GROUPS: dict[str, dict] = {
+    "DXControl": {
+        "label": "DX soğutucu kademe sayısı",
+        "stage_patterns": [r"^Dx(\d+)Alarm$", r"^DX(\d+)Defrost$"],
+    },
+    "ElectricalHeater": {
+        "label": "Elektrikli ısıtıcı kademe sayısı",
+        "stage_patterns": [r"^Heater(\d+)_ok$"],
+    },
+    "PreElectricalHeater": {
+        "label": "Ön elektrikli ısıtıcı kademe sayısı",
+        "stage_patterns": [r"^Heater(\d+)_ok$"],
+    },
+}
+
+_STAGE_PATTERNS = {
+    obj: [re.compile(pattern) for pattern in cfg["stage_patterns"]] for obj, cfg in STAGE_GROUPS.items()
+}
+
+
+@dataclass
+class StageGroup:
+    obj: str
+    label: str
+    max_stages: int
+    general_tokens: list[str] = field(default_factory=list)
+
+
+def _stage_unit(obj: str, tok: str) -> int | None:
+    """Kademe token'i ise sayiyi, degilse None dondurur ('DXControl.Dx3Alarm')."""
+    if not tok:
+        return None
+    tail = tok[len(obj) + 1:] if tok.startswith(obj + ".") else tok
+    for pattern in _STAGE_PATTERNS[obj]:
+        match = pattern.match(tail)
+        if match:
+            return int(match.group(1))
+    return None
+
+
+def detect_stage_groups(ws, name_col: str, header_row: int) -> list[StageGroup]:
+    """Kademeli gruplari ve kademe sayilarini standart listeden cikarir."""
+    found: dict[str, dict] = {
+        obj: {"max": 0, "general": []} for obj in STAGE_GROUPS
+    }
+    for row in range(header_row + 1, ws.max_row + 1):
+        obj, tok = parse_object_token(ws[f"{name_col}{row}"].value)
+        if obj not in found or not tok:
+            continue
+        unit = _stage_unit(obj, tok)
+        if unit is None:
+            if tok not in found[obj]["general"]:
+                found[obj]["general"].append(tok)
+        else:
+            found[obj]["max"] = max(found[obj]["max"], unit)
+    return [
+        StageGroup(obj=obj, label=cfg["label"], max_stages=data["max"], general_tokens=list(data["general"]))
+        for obj, cfg in STAGE_GROUPS.items()
+        for data in [found[obj]]
+        if data["max"] > 0
+    ]
+
+
+def list_stage_groups(data_dir: Path) -> list[StageGroup]:
+    """Iki protokol dosyasindaki kademeli gruplarin birlesimi."""
+    merged: dict[str, StageGroup] = {}
+    for cfg in PROTOCOLS.values():
+        ws = load_workbook(data_dir / cfg["file"]).active
+        for group in detect_stage_groups(ws, cfg["name_col"], cfg["header_row"]):
+            cur = merged.get(group.obj)
+            if cur is None or group.max_stages > cur.max_stages:
+                merged[group.obj] = group
+    return [merged[obj] for obj in STAGE_GROUPS if obj in merged]
+
+
 def classify_damper(name_cell: str | None) -> tuple[str, int] | None:
     """Damper motoru satiriyse (grup anahtari, unite numarasi) dondurur."""
     obj, _tok = parse_object_token(name_cell)
@@ -285,6 +363,8 @@ class FilterResult:
     total_fan_rows: int
     kept_damper_rows: int = 0
     total_damper_rows: int = 0
+    kept_stage_rows: int = 0
+    total_stage_rows: int = 0
     removed_by_group: dict[str, int] = field(default_factory=dict)
 
 
@@ -345,6 +425,7 @@ def filter_standard_list(
     exhaust_count: int,
     sensor_selection: dict[str, list[str]] | None = None,
     damper_selection: dict[str, int] | None = None,
+    stage_selection: dict[str, int] | None = None,
 ) -> FilterResult:
     cfg = PROTOCOLS[protocol]
     selections = {
@@ -365,17 +446,25 @@ def filter_standard_list(
     if damper_selection is not None:
         damper_groups = {g.key: g for g in detect_damper_groups(ws, name_col, cfg["header_row"])}
 
+    stage_groups: dict[str, StageGroup] = {}
+    if stage_selection is not None:
+        stage_groups = {g.obj: g for g in detect_stage_groups(ws, name_col, cfg["header_row"])}
+
     removed: list[int] = []
     removed_by_group: dict[str, int] = {}
     kept_fan_rows = 0
     total_fan_rows = 0
     kept_damper_rows = 0
     total_damper_rows = 0
+    kept_stage_rows = 0
+    total_stage_rows = 0
 
     for row in range(first_data_row, ws.max_row + 1):
         value = ws[f"{name_col}{row}"].value
         info = classify_row(value)
         damper_found = classify_damper(value) if damper_groups else None
+        stage_obj, stage_token = parse_object_token(value) if stage_groups else (None, None)
+        stage_group = stage_groups.get(stage_obj) if stage_obj else None
         if info is not None:
             total_fan_rows += 1
             sel_brand, sel_count = selections[info.direction]
@@ -391,6 +480,19 @@ def filter_standard_list(
                 kept_damper_rows += 1
                 continue
             group = f"{damper_groups[key].label} #{unit}"
+        elif stage_group is not None:
+            unit = _stage_unit(stage_group.obj, stage_token)
+            stages = stage_selection.get(stage_group.obj, 0)
+            total_stage_rows += 1
+            if unit is None:
+                keep = stages >= 1  # mod/durum/kapasite/alarm satirlari
+                group = f"{stage_group.label} - genel satirlar"
+            else:
+                keep = unit <= stages
+                group = f"{stage_group.label} #{unit}"
+            if keep:
+                kept_stage_rows += 1
+                continue
         elif registered:
             obj, tok = parse_object_token(value)
             group_obj = registered.get(obj) if obj else None
@@ -427,6 +529,8 @@ def filter_standard_list(
         total_fan_rows=total_fan_rows,
         kept_damper_rows=kept_damper_rows,
         total_damper_rows=total_damper_rows,
+        kept_stage_rows=kept_stage_rows,
+        total_stage_rows=total_stage_rows,
         removed_by_group=removed_by_group,
     )
     return result
@@ -446,6 +550,7 @@ def generate(
     exhaust_count: int,
     sensor_selection: dict[str, list[str]] | None = None,
     damper_selection: dict[str, int] | None = None,
+    stage_selection: dict[str, int] | None = None,
 ) -> list[FilterResult]:
     prefix = device_prefix.strip() or "Cihaz"
     results: list[FilterResult] = []
@@ -462,6 +567,7 @@ def generate(
                 exhaust_count=exhaust_count,
                 sensor_selection=sensor_selection,
                 damper_selection=damper_selection,
+                stage_selection=stage_selection,
             )
         )
     return results
