@@ -206,6 +206,104 @@ def list_stage_groups(data_dir: Path) -> list[StageGroup]:
     return [merged[obj] for obj in STAGE_GROUPS if obj in merged]
 
 
+# Bloksal secimler (SAF/EAF kontrol, RunAround donma korumasi). "main" secilmezse
+# grubun tum satirlari silinir; "sub" secenekleri yalnizca main seciliyken etkilidir.
+FEATURE_GROUPS: dict[str, dict] = {
+    "SAF": {
+        "label": "SAF (üfleme fan kontrol bloğu)",
+        "sub": {
+            "press": {
+                "label": "QBM97xx basınç transmitteri",
+                "tokens": ["PrHighAlarm", "PrHighAlmSet", "DuctPress", "DuctPressureBMS"],
+                "extra_obj": "QBM97xx_SAF",
+            },
+        },
+    },
+    "EAF": {
+        "label": "EAF (egzoz fan kontrol bloğu)",
+        "sub": {
+            "press": {
+                "label": "QBM97xx basınç transmitteri",
+                "tokens": ["PrHighAlarm", "PrHighAlmSet", "DuctPress", "DuctPressureBMS"],
+                "extra_obj": "QBM97xx_EAF",
+            },
+        },
+    },
+    "RunAroundCont": {
+        "label": "RunAround (su bataryası donma koruması)",
+        "sub": {},
+    },
+}
+
+# "QBM97xx_SAF" -> ("SAF", "press")
+_EXTRA_OBJECTS: dict[str, tuple[str, str]] = {
+    cfg["extra_obj"]: (obj, code)
+    for obj, group in FEATURE_GROUPS.items()
+    for code, cfg in group["sub"].items()
+    if cfg.get("extra_obj")
+}
+
+
+def _feature_state(obj: str, tok: str) -> tuple[str, str] | None:
+    """(grup nesnesi, secenek kodu) dondurur; 'main' veya alt secenek."""
+    if obj in _EXTRA_OBJECTS:
+        return _EXTRA_OBJECTS[obj]
+    group = FEATURE_GROUPS.get(obj)
+    if group is None:
+        return None
+    tail = tok[len(obj) + 1:] if tok.startswith(obj + ".") else tok
+    for code, cfg in group["sub"].items():
+        if tail in cfg["tokens"]:
+            return (obj, code)
+    return (obj, "main")
+
+
+@dataclass
+class FeatureGroup:
+    obj: str
+    label: str
+    options: list[tuple[str, str, int]]  # (kod, etiket, satir sayisi)
+    total_rows: int
+
+
+def detect_feature_groups(ws, name_col: str, header_row: int) -> list[FeatureGroup]:
+    """BLOK secime tabi satirlari ve sayilarini standart listeden cikarir."""
+    counts: dict[tuple[str, str], int] = {}
+    for row in range(header_row + 1, ws.max_row + 1):
+        obj, tok = parse_object_token(ws[f"{name_col}{row}"].value)
+        if obj is None:
+            continue
+        state = _feature_state(obj, tok or "")
+        if state is None:
+            continue
+        counts[state] = counts.get(state, 0) + 1
+    groups: list[FeatureGroup] = []
+    for obj, group in FEATURE_GROUPS.items():
+        main = counts.get((obj, "main"), 0)
+        if main == 0:
+            continue
+        options: list[tuple[str, str, int]] = [("main", "Kullaniliyor", main)]
+        for code, sub in group["sub"].items():
+            sub_rows = counts.get((obj, code), 0) + counts.get((sub.get("extra_obj", ""), code), 0)
+            if sub_rows:
+                options.append((code, sub["label"], sub_rows))
+        total = sum(count for _c, _l, count in options)
+        groups.append(FeatureGroup(obj=obj, label=group["label"], options=options, total_rows=total))
+    return groups
+
+
+def list_feature_groups(data_dir: Path) -> list[FeatureGroup]:
+    """Iki protokol dosyasindaki blok gruplarin birlesimi."""
+    merged: dict[str, FeatureGroup] = {}
+    for cfg in PROTOCOLS.values():
+        ws = load_workbook(data_dir / cfg["file"]).active
+        for group in detect_feature_groups(ws, cfg["name_col"], cfg["header_row"]):
+            cur = merged.get(group.obj)
+            if cur is None or group.total_rows > cur.total_rows:
+                merged[group.obj] = group
+    return [merged[obj] for obj in FEATURE_GROUPS if obj in merged]
+
+
 def classify_damper(name_cell: str | None) -> tuple[str, int] | None:
     """Damper motoru satiriyse (grup anahtari, unite numarasi) dondurur."""
     obj, _tok = parse_object_token(name_cell)
@@ -365,6 +463,8 @@ class FilterResult:
     total_damper_rows: int = 0
     kept_stage_rows: int = 0
     total_stage_rows: int = 0
+    kept_feature_rows: int = 0
+    total_feature_rows: int = 0
     removed_by_group: dict[str, int] = field(default_factory=dict)
 
 
@@ -426,6 +526,7 @@ def filter_standard_list(
     sensor_selection: dict[str, list[str]] | None = None,
     damper_selection: dict[str, int] | None = None,
     stage_selection: dict[str, int] | None = None,
+    feature_selection: dict[str, list[str]] | None = None,
 ) -> FilterResult:
     cfg = PROTOCOLS[protocol]
     selections = {
@@ -450,6 +551,9 @@ def filter_standard_list(
     if stage_selection is not None:
         stage_groups = {g.obj: g for g in detect_stage_groups(ws, name_col, cfg["header_row"])}
 
+    feature_enabled = feature_selection is not None
+    chosen_features = feature_selection or {}
+
     removed: list[int] = []
     removed_by_group: dict[str, int] = {}
     kept_fan_rows = 0
@@ -458,13 +562,18 @@ def filter_standard_list(
     total_damper_rows = 0
     kept_stage_rows = 0
     total_stage_rows = 0
+    kept_feature_rows = 0
+    total_feature_rows = 0
 
     for row in range(first_data_row, ws.max_row + 1):
         value = ws[f"{name_col}{row}"].value
         info = classify_row(value)
         damper_found = classify_damper(value) if damper_groups else None
-        stage_obj, stage_token = parse_object_token(value) if stage_groups else (None, None)
-        stage_group = stage_groups.get(stage_obj) if stage_obj else None
+        parsed_obj, parsed_tok = parse_object_token(value)
+        stage_group = stage_groups.get(parsed_obj) if stage_groups and parsed_obj else None
+        feature_state = (
+            _feature_state(parsed_obj, parsed_tok or "") if feature_enabled and parsed_obj else None
+        )
         if info is not None:
             total_fan_rows += 1
             sel_brand, sel_count = selections[info.direction]
@@ -481,7 +590,7 @@ def filter_standard_list(
                 continue
             group = f"{damper_groups[key].label} #{unit}"
         elif stage_group is not None:
-            unit = _stage_unit(stage_group.obj, stage_token)
+            unit = _stage_unit(stage_group.obj, parsed_tok)
             stages = stage_selection.get(stage_group.obj, 0)
             total_stage_rows += 1
             if unit is None:
@@ -492,6 +601,18 @@ def filter_standard_list(
                 group = f"{stage_group.label} #{unit}"
             if keep:
                 kept_stage_rows += 1
+                continue
+        elif feature_state is not None:
+            grp_obj, code = feature_state
+            chosen = chosen_features.get(grp_obj, [])
+            total_feature_rows += 1
+            keep = "main" in chosen and (code == "main" or code in chosen)
+            if code == "main":
+                group = f"{FEATURE_GROUPS[grp_obj]['label']}"
+            else:
+                group = f"{FEATURE_GROUPS[grp_obj]['label']} - {FEATURE_GROUPS[grp_obj]['sub'][code]['label']}"
+            if keep:
+                kept_feature_rows += 1
                 continue
         elif registered:
             obj, tok = parse_object_token(value)
@@ -531,6 +652,8 @@ def filter_standard_list(
         total_damper_rows=total_damper_rows,
         kept_stage_rows=kept_stage_rows,
         total_stage_rows=total_stage_rows,
+        kept_feature_rows=kept_feature_rows,
+        total_feature_rows=total_feature_rows,
         removed_by_group=removed_by_group,
     )
     return result
@@ -551,6 +674,7 @@ def generate(
     sensor_selection: dict[str, list[str]] | None = None,
     damper_selection: dict[str, int] | None = None,
     stage_selection: dict[str, int] | None = None,
+    feature_selection: dict[str, list[str]] | None = None,
 ) -> list[FilterResult]:
     prefix = device_prefix.strip() or "Cihaz"
     results: list[FilterResult] = []
@@ -568,6 +692,7 @@ def generate(
                 sensor_selection=sensor_selection,
                 damper_selection=damper_selection,
                 stage_selection=stage_selection,
+                feature_selection=feature_selection,
             )
         )
     return results

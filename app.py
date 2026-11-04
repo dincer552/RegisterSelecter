@@ -13,10 +13,12 @@ import updater
 from register_engine import (
     BRANDS,
     DamperGroup,
+    FeatureGroup,
     SensorGroup,
     StageGroup,
     generate,
     list_damper_groups,
+    list_feature_groups,
     list_sensor_groups,
     list_stage_groups,
 )
@@ -86,6 +88,7 @@ class App(tk.Tk):
         self._build_fan_section(body)
         self._build_damper_section(body)
         self._build_stage_section(body)
+        self._build_feature_section(body)
         self._build_output_section(body)
         self._load_config()
 
@@ -352,9 +355,68 @@ class App(tk.Tk):
             selection[group.obj] = min(max(value, 0), group.max_stages)
         return selection
 
-    # ---------- section 5: output ----------
+    # ---------- section 5: blok özellikleri (SAF / EAF / RunAround) ----------
+    def _build_feature_section(self, parent) -> None:
+        sec = tk.LabelFrame(parent, text=" 5. SAF / EAF ve Basincl Sensoru ", bg="white", font=("Segoe UI", 11, "bold"), labelanchor="nw")
+        sec.pack(fill="x", padx=2, pady=6)
+
+        self.feature_vars: dict[str, dict[str, tk.BooleanVar]] = {}
+        self.feature_sub_checks: dict[str, list[tk.Checkbutton]] = {}
+        self.feature_groups: list[FeatureGroup] = []
+        try:
+            self.feature_groups = list_feature_groups(resource_path("data"))
+        except Exception as exc:  # noqa: BLE001
+            tk.Label(sec, text=f"Standart liste okunamadi: {exc}", bg="white", fg=RED).pack(anchor="w", padx=10, pady=8)
+            return
+
+        tk.Label(
+            sec,
+            text="Kullanmadigin bloklarin tum satirlari (alarm satirlari dahil) silinir. "
+            "QBM97xx basincl transmitteri ayrica secilir; blok secili degilse transmitter satirlari da kalmaz.",
+            bg="white", fg="#4b5563", font=("Segoe UI", 9), wraplength=760, justify="left", anchor="w",
+        ).pack(fill="x", padx=10, pady=(6, 2))
+
+        box = tk.Frame(sec, bg="white")
+        box.pack(fill="x", padx=12, pady=(2, 10))
+        for group in self.feature_groups:
+            vars_by_code: dict[str, tk.BooleanVar] = {}
+            rows = tk.Frame(box, bg="white")
+            rows.pack(fill="x", pady=2)
+            for code, option_label, count in group.options:
+                var = tk.BooleanVar(value=True)
+                vars_by_code[code] = var
+                indent = 0 if code == "main" else 26
+                weight = "bold" if code == "main" else "normal"
+                text = f"{group.label if code == 'main' else option_label} ({count} satir)"
+                check = tk.Checkbutton(
+                    rows, text=text,
+                    variable=var, bg="white", font=("Segoe UI", 10, weight),
+                    activebackground="white", selectcolor="white",
+                )
+                check.pack(anchor="w", padx=indent)
+                if code == "main":
+                    var.trace_add("change", lambda *_a, g=group: self._sync_feature_subs(g))
+                else:
+                    self.feature_sub_checks.setdefault(group.obj, []).append(check)
+            self.feature_vars[group.obj] = vars_by_code
+
+        for group in self.feature_groups:
+            self._sync_feature_subs(group)
+
+    def _sync_feature_subs(self, group: FeatureGroup) -> None:
+        main_on = self.feature_vars[group.obj]["main"].get()
+        for check in self.feature_sub_checks.get(group.obj, []):
+            check.configure(state="normal" if main_on else "disabled")
+
+    def _feature_selection(self) -> dict[str, list[str]]:
+        return {
+            group.obj: [code for code, var in self.feature_vars[group.obj].items() if var.get()]
+            for group in self.feature_groups
+        }
+
+    # ---------- section 6: output ----------
     def _build_output_section(self, parent) -> None:
-        sec = tk.LabelFrame(parent, text=" 5. Cikti ", bg="white", font=("Segoe UI", 11, "bold"), labelanchor="nw")
+        sec = tk.LabelFrame(parent, text=" 6. Cikti ", bg="white", font=("Segoe UI", 11, "bold"), labelanchor="nw")
         sec.pack(fill="x", padx=2, pady=6)
 
         self.device_var = tk.StringVar(value="AHU-01")
@@ -422,11 +484,13 @@ class App(tk.Tk):
         sensors = self._sensor_selection()
         dampers = self._damper_selection()
         stages = self._stage_selection()
+        features = self._feature_selection()
         any_sensor = any(sensors.values()) if sensors else True
         any_damper = any(dampers.values()) if dampers else True
         any_stage = any(stages.values()) if stages else True
-        if not (any_sensor or any_damper or any_stage or supply_key or exhaust_key):
-            messagebox.showwarning("Secim yok", "Sensor, damper, kademe, besleme ve egzoz icin hic secim yok.")
+        any_feature = any(features.values()) if features else True
+        if not (any_sensor or any_damper or any_stage or any_feature or supply_key or exhaust_key):
+            messagebox.showwarning("Secim yok", "Sensor, damper, kademe, blok, besleme ve egzoz icin hic secim yok.")
             return
 
         count = int(self.supply_count_var.get() or 1) if supply_key else 0
@@ -451,6 +515,7 @@ class App(tk.Tk):
                 sensor_selection=sensors,
                 damper_selection=dampers,
                 stage_selection=stages,
+                feature_selection=features,
             )
         except Exception as exc:  # noqa: BLE001
             messagebox.showerror("Hata", f"Listeler olusturulamadi:\n{exc}")
@@ -460,7 +525,8 @@ class App(tk.Tk):
                 self.log_line(
                     f"[{res.protocol}] fan {res.kept_fan_rows}/{res.total_fan_rows}, "
                     f"damper {res.kept_damper_rows}/{res.total_damper_rows}, "
-                    f"kademe {res.kept_stage_rows}/{res.total_stage_rows} satir, "
+                    f"kademe {res.kept_stage_rows}/{res.total_stage_rows}, "
+                    f"blok {res.kept_feature_rows}/{res.total_feature_rows} satir, "
                     f"toplam {res.removed_rows} satir silindi -> {res.output}"
                 )
             buckets = self._removed_groups(results)
@@ -469,6 +535,7 @@ class App(tk.Tk):
                 ("Silinen sensor gruplari", "sensor"),
                 ("Silinen damper motorlari", "damper"),
                 ("Silinen kademe satirlari", "stage"),
+                ("Silinen blok satirlari", "feature"),
                 ("Silinen fan bloklari", "fan"),
             ):
                 self.log_line(f"{title}: " + (", ".join(
@@ -480,12 +547,15 @@ class App(tk.Tk):
             self._save_config()
 
     def _removed_groups(self, results) -> dict[str, dict[str, int]]:
-        """Silinen satirlari sensor / damper / fan olarak siniflandirir."""
+        """Silinen satirlari sensor / damper / kademe / blok / fan olarak siniflandirir."""
         damper_labels = {g.label for g in self.damper_groups}
         sensor_labels = {g.label for g in self.sensor_groups}
         stage_labels = {g.label for g in self.stage_groups}
+        feature_labels = {g.label for g in self.feature_groups}
         brand_labels = {b["label"] for b in BRANDS.values()}
-        buckets: dict[str, dict[str, int]] = {"sensor": {}, "damper": {}, "stage": {}, "fan": {}}
+        buckets: dict[str, dict[str, int]] = {
+            "sensor": {}, "damper": {}, "stage": {}, "feature": {}, "fan": {}
+        }
         for res in results:
             for name, count in res.removed_by_group.items():
                 if any(name.startswith(lbl) for lbl in damper_labels):
@@ -494,6 +564,8 @@ class App(tk.Tk):
                     kind = "sensor"
                 elif any(name.startswith(lbl) for lbl in stage_labels):
                     kind = "stage"
+                elif any(name.startswith(lbl) for lbl in feature_labels):
+                    kind = "feature"
                 elif any(bl in name for bl in brand_labels):
                     kind = "fan"
                 else:
@@ -623,6 +695,15 @@ class App(tk.Tk):
             if saved is None:
                 continue
             self.stage_vars[group.obj].set(str(min(max(int(saved), 0), group.max_stages)))
+        features = cfg.get("features") or {}
+        for group in self.feature_groups:
+            saved = features.get(group.obj)
+            if saved is None:
+                continue
+            chosen = set(saved)
+            for code, var in self.feature_vars[group.obj].items():
+                var.set(code in chosen)
+            self._sync_feature_subs(group)
 
     def _save_config(self) -> None:
         cfg = {
@@ -635,6 +716,7 @@ class App(tk.Tk):
             "sensors": {obj: [c for c, v in by.items() if v.get()] for obj, by in self.sensor_vars.items()},
             "dampers": self._damper_selection(),
             "stages": self._stage_selection(),
+            "features": self._feature_selection(),
         }
         try:
             config_file().write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")

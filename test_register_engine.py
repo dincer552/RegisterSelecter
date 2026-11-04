@@ -15,6 +15,7 @@ from register_engine import (
     filter_standard_list,
     generate,
     list_damper_groups,
+    list_feature_groups,
     list_sensor_groups,
     list_stage_groups,
     parse_object_token,
@@ -468,3 +469,60 @@ def test_stage_selection_does_not_touch_sensors(tmp_path):
     names = _names(res, "modbus")
     assert r"SupplyAirSensorMB\TmpVal" in names
     assert r"SupDmpMB_Siemens\Dmp_Pos" in names
+
+
+# ---------- SAF / EAF / RunAround blok secimi ----------
+
+# SAF 21+5, EAF 21+5, RunAroundCont 4
+EXPECTED_TOTAL_FEATURE_ROWS = 56
+
+
+def test_list_feature_groups():
+    groups = {g.obj: g for g in list_feature_groups(DATA_DIR)}
+    assert list(groups) == ["SAF", "EAF", "RunAroundCont"]
+    assert groups["SAF"].options[0] == ("main", "Kullaniliyor", 21)
+    assert groups["SAF"].options[1] == ("press", "QBM97xx basınç transmitteri", 5)
+    assert groups["SAF"].total_rows == 26
+    assert groups["RunAroundCont"].total_rows == 4
+    assert sum(g.total_rows for g in groups.values()) == EXPECTED_TOTAL_FEATURE_ROWS
+
+
+def test_feature_full_selection(tmp_path):
+    all_opts = {g.obj: [c for c, _, _ in g.options] for g in list_feature_groups(DATA_DIR)}
+    res = _sensor_run(tmp_path, "modbus", None, feature_selection=all_opts)
+    assert res.total_feature_rows == EXPECTED_TOTAL_FEATURE_ROWS
+    assert res.kept_feature_rows == EXPECTED_TOTAL_FEATURE_ROWS
+    assert res.removed_rows == EXPECTED_TOTAL_FAN_ROWS - 64
+
+
+def test_feature_none_selection_removes_blocks(tmp_path):
+    res = _sensor_run(tmp_path, "bacnet", None, feature_selection={}, out_name="ba.xlsx")
+    assert res.kept_feature_rows == 0
+    assert res.removed_rows == (EXPECTED_TOTAL_FAN_ROWS - 64) + EXPECTED_TOTAL_FEATURE_ROWS
+    names = _names(res, "bacnet")
+    for token in ("SAF\\", "EAF\\", "QBM97xx", "RunAroundCont"):
+        assert token not in names
+    # fan ve sensör bloklari etkilenmez
+    assert "EBMFanCont" in names
+
+
+def test_feature_pressure_transmitter_optional(tmp_path):
+    selection = {"SAF": ["main"], "EAF": ["main"], "RunAroundCont": ["main"]}
+    res = _sensor_run(tmp_path, "modbus", None, feature_selection=selection, out_name="nopress.xlsx")
+    assert res.kept_feature_rows == EXPECTED_TOTAL_FEATURE_ROWS - 10
+    names = _names(res, "modbus")
+    assert r"SAF\SAF.lowAirAlarm" in names
+    assert r"SAF\SAF.Air_FlowFan2" in names
+    assert r"SAF\SAF.DuctPress" not in names
+    assert r"SAF\SAF.PrHighAlmSet" not in names
+    assert r"QBM97xx_SAF\QBM97xx_SAF.CommAlarm" not in names
+    assert res.removed_by_group["SAF (üfleme fan kontrol bloğu) - QBM97xx basınç transmitteri"] == 5
+
+
+def test_feature_sub_option_needs_main(tmp_path):
+    selection = {"SAF": ["press"], "EAF": ["main", "press"], "RunAroundCont": []}
+    res = _sensor_run(tmp_path, "modbus", None, feature_selection=selection, out_name="odd.xlsx")
+    names = _names(res, "modbus")
+    assert "SAF\\" not in names and "QBM97xx_SAF" not in names
+    assert r"EAF\EAF.DuctPress" in names
+    assert "RunAroundCont" not in names

@@ -26,8 +26,17 @@ cihaza özel Excel listeleri üreten Windows masüstü programi.
    - `Elektrikli isitici` ve `On elektrikli isitici` kademe sayisi 0-3:
      `Heater1/2/3_ok` sayiya gore silinir; `HeaterStage` + `HighTempAlarm`
      kademe >= 1 ise kalir.
-5. **5. Cikti** – cihaz adi (örn. `AHU-01`) ve cikti klasörü.
-6. **EXCEL LISTELERINI OLUSTUR** butonuna bas.
+5. **5. SAF / EAF ve Basincl Sensoru** – blok kullanimi tik kutusu ile secilir:
+   - `SAF (ufleme fan kontrol blogu)` 21 satir + ayri `QBM97xx basincl transmitteri`
+     (5 satir) tiki.
+   - `EAF (egzoz fan kontrol blogu)` 21 satir + ayri `QBM97xx basincl transmitteri`
+     (5 satir) tiki.
+   - `RunAround (su bataryasi donma korumasi)` 4 satir.
+   Blok tiki kaldirilirsa alarm satirlari dahil tum blok silinir; transmitter tiki
+   kaldirilirsa `PrHighAlarm`, `PrHighAlmSet`, `DuctPress`, `DuctPressureBMS` ve
+   `QBM97xx_*.CommAlarm` satirlari silinir. `Air_FlowFan1/2` satirlari her zaman kalir.
+6. **6. Cikti** – cihaz adi (örn. `AHU-01`) ve cikti klasörü.
+7. **EXCEL LISTELERINI OLUSTUR** butonuna bas.
 
 Cikti: `AHU-01_Modbus_Reg_List.xlsx` ve `AHU-01_BACnet_Reg_List.xlsx`
 
@@ -42,8 +51,10 @@ Cikti: `AHU-01_Modbus_Reg_List.xlsx` ve `AHU-01_BACnet_Reg_List.xlsx`
   tum satirlari silinir. `DamperCont` / `BypassDmpCont` parametre satirlari silinmez.
 - Isitici/DX kademelerinde secilen kademe sayisini asan satirlar silinir;
   kademe 0 ise grubun genel satirlari da silinir.
-- Sabit satirlar her zaman korunur: AHU start/stop, batarya, SAF/EAF kontrol
-  mantigi, genel alarm satirlari, `BmsTemp_Hum`, `TempAVG`, `Hum_Mod_Sel`.
+- Blok tiklari (SAF / EAF / RunAround) kaldirilirsa o blogun tum satirlari silinir;
+  blok secili degilse transmitter tiki tek basina hicbir satir geri getirmez.
+- Sabit satirlar her zaman korunur: AHU start/stop, batarya, `Air_FlowFan1/2`
+  havalandirma satirlari, genel alarm satirlari, `BmsTemp_Hum`, `TempAVG`, `Hum_Mod_Sel`.
 
 ## Algilanan sensorler (standart listeden otomatik)
 
@@ -72,6 +83,17 @@ satirlarini bulur. Standart listeye yeni sensor eklersen programda otomatik gör
 Her motor 4 satir (Dmp_Fdb + CommAlarm + FeedbackAlarm + Mechanical_fault),
 tarafin kendisi 1 `Dmp_Pos` satiri -> toplam **102 satir/protokol**.
 `<Taraf>DmpMB_<Marka>` kalibina uyan yeni markalar da otomatik listelenir.
+
+## Blok secimleri (SAF / EAF / RunAround)
+
+| Blok | Satirlar | Ayri tik |
+|---|---|---|
+| `SAF` ufleme fan kontrol | 21 | `QBM97xx basincl transmitteri` 5 satir (`PrHighAlarm`, `PrHighAlmSet`, `DuctPress`, `DuctPressureBMS`, `QBM97xx_SAF.CommAlarm`) |
+| `EAF` egzoz fan kontrol | 21 | ayni transmitter 5 satir (`QBM97xx_EAF.CommAlarm`) |
+| `RunAroundCont` su bataryasi donma korumasi | 4 | - |
+
+Toplam **56 satir/protokol**. Blok isimleri `FEATURE_GROUPS` tablosundan gelir;
+standart listeye yeni blok eklerken sadece bu tabloya satir eklemek yeterlidir.
 
 ## Marka bloklari (standart listedeki karsiliklari)
 
