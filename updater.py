@@ -82,15 +82,27 @@ def check_latest_release(current_version: str, timeout: float = 12.0) -> Release
 
 
 def download_release(info: ReleaseInfo, timeout: float = 600.0, progress=None) -> Path:
+    """EXE'yi parcacik indirir; progress(indirilen, toplam) ile ilerleme bildirir."""
     dest = Path(tempfile.gettempdir()) / info.asset_name
     req = urllib.request.Request(info.download_url, headers=_headers())
+    downloaded = 0
     with urllib.request.urlopen(req, timeout=timeout) as resp:
-        data = resp.read()
-    if not data or len(data) < 1024 * 1024:
+        total = int(resp.headers.get("Content-Length") or 0) or info.size
+        with dest.open("wb") as fh:
+            while True:
+                chunk = resp.read(64 * 1024)
+                if not chunk:
+                    break
+                fh.write(chunk)
+                downloaded += len(chunk)
+                if progress:
+                    progress(downloaded, total)
+    if not downloaded or downloaded < 1024 * 1024:
+        dest.unlink(missing_ok=True)
         raise UpdateError("Indirilen dosya cok kucuk, guncelleme iptal edildi.")
-    dest.write_bytes(data)
-    if progress:
-        progress(len(data), len(data))
+    if total and downloaded != total:
+        dest.unlink(missing_ok=True)
+        raise UpdateError(f"Indirme yarida kaldi: {downloaded}/{total} bayt.")
     return dest
 
 

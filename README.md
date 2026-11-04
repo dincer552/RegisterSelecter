@@ -111,23 +111,35 @@ standart listeye yeni blok eklerken sadece bu tabloya satir eklemek yeterlidir.
 - Yeni surum varsa üst bardaki yazı **yesil** olur (`YENI SURUM MEVCUT: vX.Y.Z`)
   ve **GUNCELLE** butonu aktif hale gelir.
 - Küçük **Manuel Kontrol** butonu ile istedigini an kontrol tetikleyebilirsin.
-- GUNCELLE: yeni EXE indirilir, eski EXE'nin yerine konur ve program yeniden
-  baslar. (Yalnizca paketlenmis EXE'de calisir.)
+- GUNCELLE: **ilerleme penceresi** acilir ve indirme su an ekranin ortasinda
+  canli takip edilir: `3.2 MB / 12.8 MB  %25  2.0 MB/s` (yesil üst bar da
+  `Indiriliyor %25` gosterir).
+- Indirme biter, pencerede `12.8 MB indirildi - program yeniden baslatiliyor...`
+  yazar; kisa bir beklemenin ardindan program **kapanir**, yeni EXE eskisinin
+  yerine konur ve **yeni EXE kendiliginden baslar**.
+- Indirme yanda kalirsa (boyut tutmuyorsa) veya 1 MB'den kucukse guncelleme
+  **iptal edilir**, yarim dosya silinir, eski surum oldugu gibi kalir.
+- Pencere indirme sirasinda kapatilamaz; hata olursa GUNCELLE butonu geri acilir.
+- (Yalnizca paketlenmis EXE'de calisir; kaynak koddan calistirildiginda bilgi
+  verir.)
 
 ## Guncelleme akisi (gelistirici)
 
 1. `version.py` icindeki `__version__` degerini artir
 2. `main` dalina push et
-3. GitHub Actions: testler -> Windows EXE build -> smoke test -> `vX.Y.Z` tag'i ile
-   Release yayinlar
+3. GitHub Actions: testler -> Windows EXE build -> **`--selftest` + smoke test**
+   -> `vX.Y.Z` tag'i ile Release yayinlar.
+   `RegisterSelecter.exe --selftest` arayuzun tum bolumlerini kurup hatasiz
+   cikar; bolumlerden biri patlarsa release hic yayinlanmaz.
 4. Kullanicinin programi 1 dk icinde yesil guncelleme bildirimi gösterir
 
 ## Gelistirme
 
 ```bash
 pip install -r requirements.txt pytest
-pytest -v
+pytest -v            # test_register_engine.py (liste filtre) + test_updater.py (indirme)
 python app.py
+python app.py --selftest   # arayuz bolumlerini kurup cikar, CI release kapisi
 ```
 
 EXE manually:

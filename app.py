@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import sys
 import threading
+import time
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
@@ -49,6 +50,10 @@ def config_file() -> Path:
     return root / "register_selecter.json"
 
 
+def fmt_mb(size_bytes: float) -> str:
+    return f"{size_bytes / (1024 * 1024):.1f} MB"
+
+
 class ScrollFrame(tk.Frame):
     """Dikey kaydirilmali bolum kabini."""
 
@@ -76,6 +81,9 @@ class App(tk.Tk):
         self.configure(bg=BG)
 
         self._update_info: updater.ReleaseInfo | None = None
+        self._update_dialog: tk.Toplevel | None = None
+        self.progress_bar: ttk.Progressbar | None = None
+        self.progress_label: tk.Label | None = None
         self._checking = False
         self._downloading = False
         self._frozen = getattr(sys, "frozen", False)
@@ -634,10 +642,22 @@ class App(tk.Tk):
         self._downloading = True
         self.update_btn.configure(state="disabled")
         self._set_status("Indiriliyor...", GRAY)
+        self._open_update_dialog(info)
 
         def worker() -> None:
+            started = time.monotonic()
+            last_post = started
+
+            def on_progress(done: int, total: int) -> None:
+                nonlocal last_post
+                now = time.monotonic()
+                if now - last_post < 0.15:
+                    return
+                last_post = now
+                self.after(0, self._update_progress, done, total, now - started)
+
             try:
-                path = updater.download_release(info)
+                path = updater.download_release(info, progress=on_progress)
             except Exception as exc:  # noqa: BLE001
                 self.after(0, self._download_failed, str(exc))
                 return
@@ -645,15 +665,62 @@ class App(tk.Tk):
 
         threading.Thread(target=worker, daemon=True).start()
 
+    def _open_update_dialog(self, info: updater.ReleaseInfo) -> None:
+        ver = ".".join(map(str, info.version))
+        dlg = tk.Toplevel(self)
+        dlg.title(f"Guncelleme v{ver}")
+        dlg.configure(bg=BG)
+        dlg.resizable(False, False)
+        dlg.transient(self)
+        dlg.attributes("-topmost", True)
+        dlg.protocol("WM_DELETE_WINDOW", lambda: None)
+        tk.Label(dlg, text=f"{APP_TITLE} v{ver}", bg=BG, fg="#1f2a37", font=("Segoe UI", 11, "bold")).pack(padx=18, pady=(14, 2))
+        self.progress_bar = ttk.Progressbar(dlg, orient="horizontal", length=340, mode="determinate", maximum=100)
+        self.progress_bar.pack(padx=18, pady=8)
+        first = f"{fmt_mb(info.size)} indirilecek" if info.size else "Indiriliyor..."
+        self.progress_label = tk.Label(dlg, text=first, bg=BG, fg=GRAY, font=("Consolas", 9))
+        self.progress_label.pack(padx=18, pady=(0, 14))
+        dlg.update_idletasks()
+        x = self.winfo_rootx() + (self.winfo_width() - dlg.winfo_width()) // 2
+        y = self.winfo_rooty() + (self.winfo_height() - dlg.winfo_height()) // 2
+        dlg.geometry(f"+{max(x, 0)}+{max(y, 0)}")
+        self._update_dialog = dlg
+
+    def _update_progress(self, done: int, total: int, elapsed: float) -> None:
+        if total:
+            percent = min(100.0, done * 100.0 / total)
+            self.progress_bar.configure(value=percent)
+            text = f"{fmt_mb(done)} / {fmt_mb(total)}  %{percent:.0f}"
+            self._set_status(f"Indiriliyor %{percent:.0f}", GRAY)
+        else:
+            text = f"{fmt_mb(done)} indirildi"
+        if elapsed > 0.3:
+            text += f"  {fmt_mb(done / elapsed)}/s"
+        self.progress_label.configure(text=text)
+
+    def _close_update_dialog(self) -> None:
+        if self._update_dialog is not None:
+            self._update_dialog.destroy()
+            self._update_dialog = None
+
     def _download_failed(self, message: str) -> None:
         self._downloading = False
+        self._close_update_dialog()
         self.update_btn.configure(state="normal")
         self._set_status("Indirme basarisiz: " + message[:60], RED)
+        messagebox.showerror("Guncelleme", f"Indirme basarisiz:\n{message}")
 
     def _download_done(self, path: Path) -> None:
         self._downloading = False
+        size = path.stat().st_size
+        self.progress_bar.configure(value=100)
+        self.progress_label.configure(text=f"{fmt_mb(size)} indirildi - program yeniden baslatiliyor...")
         self._set_status("Yeniden baslatiliyor...", GREEN_NEW)
-        self.log_line(f"Guncelleme indirildi: {path.name}")
+        self.log_line(f"Guncelleme indirildi: {path.name} ({fmt_mb(size)})")
+        self.after(1200, self._restart, path)
+
+    def _restart(self, path: Path) -> None:
+        self._close_update_dialog()
         updater.apply_and_restart(path)
         self.destroy()
 
