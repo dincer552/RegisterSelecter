@@ -36,7 +36,7 @@ EXPECTED_TOTAL_FAN_ROWS = 216
         (r"SupplyAirSensorMB\TmpVal", None),
         (r"SAF\SAF.ManualReferanceBMS", None),
         (r"Alarm\SupplyF9FilterAlm", None),
-        ("EBMFanCont\SAF Ebm RPM=60440", RowClassification("ebm", "supply", 1)),
+        (r"EBMFanCont\SAF Ebm RPM=60440", RowClassification("ebm", "supply", 1)),
     ],
 )
 def test_classify_row(cell, expected):
@@ -137,6 +137,8 @@ def test_table_reference_refreshed(tmp_path):
     assert len(ws.tables) == 1
     table = next(iter(ws.tables.values()))
     assert table.ref == f"A4:G{ws.max_row}"
+    if table.autoFilter is not None:
+        assert table.autoFilter.ref == table.ref
 
 
 def test_generate_writes_both_files(tmp_path):

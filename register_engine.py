@@ -15,27 +15,33 @@ from pathlib import Path
 from openpyxl import load_workbook
 
 BRANDS: dict[str, dict] = {
+    # unit numbering: ebm/ziehl bloklari isimsiz=1, "1" eki=2 ... (suffix_plus_one)
+    # danfoss/welldrive bloklari "1" ekiyle baslar (explicit)
     "ebm": {
         "label": "ebm-papst",
         "max_units": 4,
+        "unit_mode": "suffix_plus_one",
         "supply": r"EBMFanCont(\d*)",
         "exhaust": r"EBMFaneExCont(\d*)",
     },
     "danfoss": {
         "label": "Danfoss",
         "max_units": 2,
+        "unit_mode": "explicit",
         "supply": r"FC101Asp(\d*)",
         "exhaust": r"FC101Vant(\d*)",
     },
     "ziehl": {
         "label": "Ziehl-Abegg",
         "max_units": 4,
+        "unit_mode": "suffix_plus_one",
         "supply": r"ZiehlAbeggSup(\d*)",
         "exhaust": r"ZiehlAbeggExh(\d*)",
     },
     "welldrive": {
         "label": "WellDrive",
         "max_units": 2,
+        "unit_mode": "explicit",
         "supply": r"WDriveAsp(\d*)",
         "exhaust": r"WDriveVant(\d*)",
     },
@@ -97,7 +103,10 @@ def classify_row(name_cell: str | None) -> RowClassification | None:
     for (brand, direction), pattern in _BRAND_PATTERNS.items():
         for match in pattern.finditer(name_cell):
             suffix = match.group(1)
-            unit = int(suffix) + 1 if suffix else 1
+            if BRANDS[brand]["unit_mode"] == "explicit":
+                unit = int(suffix) if suffix else 1
+            else:
+                unit = int(suffix) + 1 if suffix else 1
             if best is None or match.start() >= best[0]:
                 best = (match.start(), brand, direction, unit)
     if best is None:
@@ -122,7 +131,10 @@ def _delete_row_ranges(ws, rows: list[int]) -> None:
 def _refresh_table_refs(ws, header_row: int) -> None:
     for table in list(ws.tables.values()):
         last_col = re.match(r"[A-Z]+", table.ref.split(":")[-1]).group(0)
-        table.ref = f"A{header_row}:{last_col}{ws.max_row}"
+        new_ref = f"A{header_row}:{last_col}{ws.max_row}"
+        table.ref = new_ref
+        if table.autoFilter is not None:
+            table.autoFilter.ref = new_ref
 
 
 def filter_standard_list(
