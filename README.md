@@ -2,7 +2,7 @@
 
 Standart AHU yaziliminin **tam acik** Modbus ve BACnet register listelerini,
 cihazda gercekten bulunan sensör ve fan konfigürasyonuna göre filtreleyip
-cihaza özel Excel listeleri üreten Windows masüstü programi.
+cihaza özel Excel listeleri üreten Windows masaüstü programi.
 
 ## Kullanim (adim adim, yukaridan asagiya)
 

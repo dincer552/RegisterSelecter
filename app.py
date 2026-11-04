@@ -102,7 +102,7 @@ class App(tk.Tk):
         left = tk.Frame(bar, bg=HEADER_BG)
         left.pack(side="left", padx=14, pady=10)
         tk.Label(left, text=APP_TITLE, bg=HEADER_BG, fg="white", font=("Segoe UI", 14, "bold")).pack(anchor="w")
-        tk.Label(left, text=f"Surdum v{__version__}", bg=HEADER_BG, fg=GRAY, font=("Segoe UI", 9)).pack(anchor="w")
+        tk.Label(left, text=f"Surum v{__version__}", bg=HEADER_BG, fg=GRAY, font=("Segoe UI", 9)).pack(anchor="w")
 
         right = tk.Frame(bar, bg=HEADER_BG)
         right.pack(side="right", padx=14)
