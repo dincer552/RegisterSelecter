@@ -36,6 +36,9 @@ jobs:
       - name: Smoke test (EXE acilma)
         shell: pwsh
         run: |
+          $self = Start-Process -FilePath "dist/RegisterSelecter.exe" -ArgumentList "--selftest" -PassThru -Wait
+          if ($self.ExitCode -ne 0) { Write-Host "Selftest kapandi, kod: $($self.ExitCode)"; exit 1 }
+          Write-Host "Selftest OK (tum bolumler kuruldu)"
           $p = Start-Process -FilePath "dist/RegisterSelecter.exe" -PassThru
           Start-Sleep -Seconds 6
           if ($p.HasExited) { Write-Host "EXE kapandi, kod: $($p.ExitCode)"; exit 1 }

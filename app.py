@@ -395,7 +395,7 @@ class App(tk.Tk):
                 )
                 check.pack(anchor="w", padx=indent)
                 if code == "main":
-                    var.trace_add("change", lambda *_a, g=group: self._sync_feature_subs(g))
+                    var.trace_add("write", lambda *_a, g=group: self._sync_feature_subs(g))
                 else:
                     self.feature_sub_checks.setdefault(group.obj, []).append(check)
             self.feature_vars[group.obj] = vars_by_code
@@ -729,6 +729,16 @@ class App(tk.Tk):
 
 
 def main() -> None:
+    if "--selftest" in sys.argv:
+        try:
+            app = App()
+            app.update_idletasks()
+            app.destroy()
+        except Exception as exc:  # noqa: BLE001
+            print(f"SELFTEST FAILED: {exc}")
+            raise SystemExit(1)
+        print("SELFTEST OK")
+        return
     app = App()
     app.protocol("WM_DELETE_WINDOW", app.on_close)
     app.mainloop()
