@@ -1,23 +1,46 @@
 # REGISTER SELECTER
 
 Standart AHU yaziliminin **tam acik** Modbus ve BACnet register listelerini,
-cihazinda gercekten bulunan fan konfigürasyonuna göre filtreleyip
+cihazda gercekten bulunan sensör ve fan konfigürasyonuna göre filtreleyip
 cihaza özel Excel listeleri üreten Windows masüstü programi.
 
-## Kullanim
+## Kullanim (adim adim, yukaridan asagiya)
 
-1. **Besleme fan markasi** sec: `ebm-papst`, `Danfoss`, `Ziehl-Abegg`, `WellDrive` veya `Yok`
-2. **Adet** sec (ebm-papst ve Ziehl-Abegg icin 1-4, Danfoss ve WellDrive icin 1-2)
-3. Ayni secimi **Egzoz fan markasi** icin yap
-4. Cihaz adini (örn. `AHU-01`) ve cikti klasörünü sec
-5. **EXCEL LISTELERINI OLUSTUR** butonuna bas
+1. **1. Sicaklik Sensorleri** – liste standart Excel'den okunur, cihazda olmayan
+   sensorlerin tiki kaldirilir. Tek ölçümlü sensorler tek tik kutusudur
+   (örn. *Oda Sıcaklık Sensörü*); sıcaklık + nem + CO2 (+ entropi/mutlak nem)
+   içeren sensorlerde her sinyal ayri ayri secilir.
+   **Tumunu Sec / Tumunu Kaldir** butonlari ile hizli isaretlenebilir.
+2. **2. Fan Secimi** – **Besleme fan markasi**: `ebm-papst`, `Danfoss`, `Ziehl-Abegg`,
+   `WellDrive` veya `Yok`, sonra **Adet** (ebm-papst ve Ziehl-Abegg 1-4,
+   Danfoss ve WellDrive 1-2). Ayni secim **Egzoz fan markasi** icin de yapilir.
+3. **3. Cikti** – cihaz adi (örn. `AHU-01`) ve cikti klasörü.
+4. **EXCEL LISTELERINI OLUSTUR** butonuna bas.
 
-Cikti: `AHU-01_Modbus_Reg_List.xlsx` ve `AHU-01_BACnet_List.xlsx`
+Cikti: `AHU-01_Modbus_Reg_List.xlsx` ve `AHU-01_BACnet_Reg_List.xlsx`
 
-Seçilmeyen marka bloklari ve secilen adetten fazla ünitelerin satirlari
-(RPM/Power/Current/sicaklik/calisma saati + MotorAlarm/CommAlarm/WARNING/FcAlarm
-satirlari) silinir. Fan markasi olmayan satirlar (sensörler, batarya, SAF/EAF
-kontrol mantigi, AHU start/stop, genel alarm satirlari) aynen korunur.
+## Ne silinir, ne kalir
+
+- Secilmeyen marka bloklari ve secilen adetten fazla ünitelerin satirlari
+  (RPM/Power/Current/sicaklik/calisma saati + MotorAlarm/CommAlarm/WARNING/FcAlarm)
+  silinir.
+- Tik kaldirilan sensorün ölçü satirlari silinir; hicbir sinyali secilmeyen
+  sensorün **CommAlarm** satiri da silinir (en az bir sinyal seciliyorsa alarm kalir).
+- Sabit satirlar her zaman korunur: AHU start/stop, batarya, SAF/EAF kontrol
+  mantigi, genel alarm satirlari, `BmsTemp_Hum`, `TempAVG`, `Hum_Mod_Sel`.
+
+## Algilanan sensorler (standart listeden otomatik)
+
+| Sensor | Sinyaller |
+|---|---|
+| Ufleme / Donus / Taze Hava | Sıcaklık, Nem, CO2, Entropi, Mutlak Nem |
+| Batarya Sonrasi / Egzoz / Karsim / DX Sonrasi / IsI Geri Kazanim Sonrasi / Esanjor Cikis | Sıcaklık, Nem, CO2 |
+| Donus CO2 Sensörü | Sıcaklık, CO2 |
+| Oda Sıcaklık (x2), Oda Nem, Oda CO2, Su Sıcaklık | tek sinyal (tik kutusu) |
+
+Sensor listesi koda gömülü degildir; program standart Excel'i okuyarak
+`Nesne\TmpVal`, `Nesne\HumVal`, `Nesne\CO2Val`, `Nesne\EntVal`, `Nesne\AbsHum`
+satirlarini bulur. Standart listeye yeni sensor eklersen programda otomatik görünür.
 
 ## Marka bloklari (standart listedeki karsiliklari)
 

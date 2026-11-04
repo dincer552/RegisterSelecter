@@ -1,8 +1,9 @@
 """Standart AHU register listelerini cihaz konfigürasyonuna gore filtreler.
 
 Kullanicinin sectigi marka + adet disindaki fan bloklari (EBM, Danfoss,
-Ziehl-Abegg, WellDrive) ve o bloklarin alarm satirlari silinir; fan markasi
-olmayan satirlar (sensor, batarya, SAF/EAF mantigi, genel alarm satirlari)
+Ziehl-Abegg, WellDrive) ve tiklamadigi sicaklik/nem/CO2 sensor satirlari
+(o satirlarin CommAlarm'lari dahil) silinir; sabit satirlar (AHU start,
+batarya, SAF/EAF mantigi, BmsTemp_Hum, TempAVG, genel alarm satirlari)
 oldugu gibi kalir.
 """
 
@@ -70,6 +71,115 @@ _BRAND_PATTERNS = {
     for direction in ("supply", "exhaust")
     for pattern in [cfg[direction]]
 }
+
+# Excel'deki olasi olcu sinyal tokenlari -> (kod, etiket)
+SIGNAL_TOKENS: dict[str, tuple[str, str]] = {
+    "TmpVal": ("tmp", "Sıcaklık"),
+    "HumVal": ("hum", "Nem"),
+    "CO2Val": ("co2", "CO2"),
+    "CO2Value": ("co2", "CO2"),
+    "EntVal": ("ent", "Entropi"),
+    "AbsHum": ("abshum", "Mutlak Nem"),
+}
+
+OBJECT_LABELS: dict[str, str] = {
+    "SupplyAirSensorMB": "Üfleme Hava Sensörü",
+    "ReturnAirSensorMB": "Dönüş Hava Sensörü",
+    "FreshAirSensorMB": "Taze Hava Sensörü",
+    "AfterCoilAirSensorMB": "Batarya Sonrası Hava Sensörü",
+    "ExhaustAirSensorMB": "Egzoz Hava Sensörü",
+    "AfterDxUnitAirSensorMB": "DX Sonrası Hava Sensörü",
+    "AfterHeatRecAirSensorMB": "Isı Geri Kazanım Sonrası Sensör",
+    "ExchngrLeaveTmpSensorMB": "Eşanjör Çıkış Sensörü",
+    "MixingAirSensorMB": "Karışım Hava Sensörü",
+    "ReturnCO2AirSensorMB": "Dönüş CO2 Sensörü",
+    "Room Temp": "Oda Sıcaklık Sensörü",
+    "Room Temp1": "Oda Sıcaklık Sensörü 2",
+    "Room Hum": "Oda Nem Sensörü",
+    "Room Co2": "Oda CO2 Sensörü",
+    "Water Temp": "Su Sıcaklık Sensörü",
+}
+
+
+def object_label(obj: str) -> str:
+    return OBJECT_LABELS.get(obj, obj)
+
+
+@dataclass
+class SensorGroup:
+    obj: str
+    label: str
+    signals: list[tuple[str, str]]  # (kod, etiket) sirasiyla
+
+
+def parse_object_token(name_cell: str | None) -> tuple[str, str] | tuple[None, None]:
+    r"""'0x2304 'SupplyAirSensorMB\TmpVal=60000' gibisinden (obje, token) cikarir."""
+    if not name_cell:
+        return None, None
+    s = str(name_cell).strip()
+    s = re.sub(r"=\d+$", "", s)
+    s = re.sub(r"^0x[0-9A-Fa-f]+\s+", "", s).strip("'").strip()
+    if "\\" not in s:
+        return None, None
+    obj, tok = s.split("\\", 1)
+    return obj.strip(), tok.strip()
+
+
+def _signal_for_token(obj: str, tok: str) -> tuple[str, str] | None:
+    if tok in SIGNAL_TOKENS:
+        return SIGNAL_TOKENS[tok]
+    # "Room Temp\Room Temp" ve "Room Temp1\Room Temp" gibi tek degerli nesneler
+    if tok.rstrip("0123456789") == obj.rstrip("0123456789"):
+        low = tok.lower()
+        if "co2" in low:
+            return ("co2", "CO2")
+        if "hum" in low:
+            return ("hum", "Nem")
+        if "tmp" in low or "temp" in low:
+            return ("tmp", "Sıcaklık")
+    return None
+
+
+def detect_sensor_groups(ws, name_col: str, header_row: int) -> list[SensorGroup]:
+    """Standart listedeki gercek sensor nesnelerini ve sinyallerini bulur."""
+    groups: dict[str, dict[str, str]] = {}
+    for row in range(header_row + 1, ws.max_row + 1):
+        obj, tok = parse_object_token(ws[f"{name_col}{row}"].value)
+        if obj is None:
+            continue
+        sig = _signal_for_token(obj, tok)
+        if sig:
+            groups.setdefault(obj, {})
+            if sig[0] not in groups[obj]:
+                groups[obj][sig[0]] = sig[1]
+    ordered: list[SensorGroup] = []
+    for obj, codes in groups.items():
+        seen: set[str] = set()
+        signals: list[tuple[str, str]] = []
+        for token, (code, label) in SIGNAL_TOKENS.items():
+            if code in codes and code not in seen:
+                signals.append((code, label))
+                seen.add(code)
+        ordered.append(SensorGroup(obj=obj, label=object_label(obj), signals=signals))
+    return ordered
+
+
+def list_sensor_groups(data_dir: Path) -> list[SensorGroup]:
+    """Iki protokol dosyasinda bulunan tum sensör gruplarinin birlesimi."""
+    merged: dict[str, SensorGroup] = {}
+    for protocol, cfg in PROTOCOLS.items():
+        wb = load_workbook(data_dir / cfg["file"], read_only=False)
+        for group in detect_sensor_groups(wb.active, cfg["name_col"], cfg["header_row"]):
+            cur = merged.get(group.obj)
+            if cur is None:
+                merged[group.obj] = group
+            else:
+                codes = {c for c, _ in cur.signals}
+                for code, label in group.signals:
+                    if code not in codes:
+                        cur.signals.append((code, label))
+                        codes.add(code)
+    return list(merged.values())
 
 
 @dataclass
@@ -145,6 +255,7 @@ def filter_standard_list(
     supply_count: int,
     exhaust_brand: str | None,
     exhaust_count: int,
+    sensor_selection: dict[str, list[str]] | None = None,
 ) -> FilterResult:
     cfg = PROTOCOLS[protocol]
     selections = {
@@ -157,22 +268,44 @@ def filter_standard_list(
     name_col = cfg["name_col"]
     first_data_row = cfg["header_row"] + 1
 
+    registered: dict[str, SensorGroup] = {}
+    if sensor_selection is not None:
+        registered = {g.obj: g for g in detect_sensor_groups(ws, name_col, cfg["header_row"])}
+
     removed: list[int] = []
     removed_by_group: dict[str, int] = {}
     kept_fan_rows = 0
     total_fan_rows = 0
 
     for row in range(first_data_row, ws.max_row + 1):
-        info = classify_row(ws[f"{name_col}{row}"].value)
-        if info is None:
+        value = ws[f"{name_col}{row}"].value
+        info = classify_row(value)
+        if info is not None:
+            total_fan_rows += 1
+            sel_brand, sel_count = selections[info.direction]
+            keep = sel_brand is not None and info.brand == sel_brand and info.unit <= sel_count
+            if keep:
+                kept_fan_rows += 1
+                continue
+            group = f"{BRANDS[info.brand]['label']} {cfg_label_direction(info.direction)} #{info.unit}"
+        elif registered:
+            obj, tok = parse_object_token(value)
+            group_obj = registered.get(obj) if obj else None
+            if group_obj is None:
+                continue  # bu satir ne fan ne sensor bloku -> sabit kalir
+            sig = _signal_for_token(obj, tok)
+            chosen = set(sensor_selection.get(obj, []))
+            if sig is not None:
+                keep = sig[0] in chosen
+                group = f"{group_obj.label} - {sig[1]}"
+            else:
+                keep = bool(chosen)  # CommAlarm gibi nesne satirlari en az bir sinyal seciliyse kalir
+                group = f"{group_obj.label} - Haberleşme Alarmları"
+            if keep:
+                continue
+        else:
             continue
-        total_fan_rows += 1
-        sel_brand, sel_count = selections[info.direction]
-        keep = sel_brand is not None and info.brand == sel_brand and info.unit <= sel_count
-        if keep:
-            kept_fan_rows += 1
-            continue
-        group = f"{BRANDS[info.brand]['label']} {cfg_label_direction(info.direction)} #{info.unit}"
+
         removed_by_group[group] = removed_by_group.get(group, 0) + 1
         removed.append(row)
 
@@ -206,6 +339,7 @@ def generate(
     supply_count: int,
     exhaust_brand: str | None,
     exhaust_count: int,
+    sensor_selection: dict[str, list[str]] | None = None,
 ) -> list[FilterResult]:
     prefix = device_prefix.strip() or "Cihaz"
     results: list[FilterResult] = []
@@ -220,6 +354,7 @@ def generate(
                 supply_count=supply_count,
                 exhaust_brand=exhaust_brand,
                 exhaust_count=exhaust_count,
+                sensor_selection=sensor_selection,
             )
         )
     return results

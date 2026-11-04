@@ -10,7 +10,7 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
 import updater
-from register_engine import BRANDS, generate
+from register_engine import BRANDS, SensorGroup, generate, list_sensor_groups
 from version import __version__
 
 APP_TITLE = "REGISTER SELECTER"
@@ -38,12 +38,30 @@ def config_file() -> Path:
     return root / "register_selecter.json"
 
 
+class ScrollFrame(tk.Frame):
+    """Dikey kaydirilmali bolum kabini."""
+
+    def __init__(self, parent) -> None:
+        super().__init__(parent, bg=BG)
+        self.canvas = tk.Canvas(self, bg=BG, highlightthickness=0)
+        bar = ttk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
+        self.inner = tk.Frame(self.canvas, bg=BG)
+        self.inner_id = self.canvas.create_window((0, 0), window=self.inner, anchor="nw")
+        self.canvas.configure(yscrollcommand=bar.set)
+        self.canvas.pack(side="left", fill="both", expand=True)
+        bar.pack(side="right", fill="y")
+        self.inner.bind("<Configure>", lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
+        self.canvas.bind("<Configure>", lambda e: self.canvas.itemconfigure(self.inner_id, width=e.width))
+        self.canvas.bind("<MouseWheel>", lambda e: self.canvas.yview_scroll(int(-e.delta / 120), "units"))
+        self.inner.bind("<MouseWheel>", lambda e: self.canvas.yview_scroll(int(-e.delta / 120), "units"))
+
+
 class App(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
         self.title(f"{APP_TITLE} v{__version__}")
-        self.geometry("880x640")
-        self.minsize(760, 560)
+        self.geometry("960x740")
+        self.minsize(800, 560)
         self.configure(bg=BG)
 
         self._update_info: updater.ReleaseInfo | None = None
@@ -52,7 +70,12 @@ class App(tk.Tk):
         self._frozen = getattr(sys, "frozen", False)
 
         self._build_header()
-        self._build_body()
+        self.scroll = ScrollFrame(self)
+        self.scroll.pack(fill="both", expand=True, padx=16, pady=8)
+        body = self.scroll.inner
+        self._build_sensor_section(body)
+        self._build_fan_section(body)
+        self._build_output_section(body)
         self._load_config()
 
         self.after(3000, self._auto_check)
@@ -77,10 +100,10 @@ class App(tk.Tk):
         btns.pack(anchor="e", pady=(4, 0))
 
         self.check_btn = tk.Button(
-            btns, text="Manuel Kontrol", width=14, font=("Segoe UI", 9), relief="flat", cursor="hand2"
+            btns, text="Manuel Kontrol", width=14, font=("Segoe UI", 9), relief="flat", cursor="hand2",
+            command=self._manual_check,
         )
         self.check_btn.pack(side="right")
-        self.check_btn.configure(command=self._manual_check)
 
         self.update_btn = tk.Button(
             btns,
@@ -94,69 +117,150 @@ class App(tk.Tk):
             activeforeground="#cbd5e1",
             state="disabled",
             cursor="hand2",
+            command=self._start_update,
         )
         self.update_btn.pack(side="right", padx=(0, 8))
-        self.update_btn.configure(command=self._start_update)
 
-    # ---------- body ----------
-    def _build_body(self) -> None:
-        pad = dict(padx=16, pady=8)
-        top = tk.Frame(self, bg=BG)
-        top.pack(fill="x", **pad)
+    # ---------- section 1: sensors ----------
+    def _build_sensor_section(self, parent) -> None:
+        sec = tk.LabelFrame(parent, text=" 1. Sicaklik Sensorleri ", bg="white", font=("Segoe UI", 11, "bold"), labelanchor="nw")
+        sec.pack(fill="x", padx=2, pady=6)
 
-        form = tk.Frame(top, bg="white", highlightbackground="#d3dbe3", highlightthickness=1)
-        form.pack(fill="x")
+        self.sensor_vars: dict[str, dict[str, tk.BooleanVar]] = {}
+        self.sensor_groups: list[SensorGroup] = []
+        try:
+            self.sensor_groups = list_sensor_groups(resource_path("data"))
+        except Exception as exc:  # noqa: BLE001
+            tk.Label(sec, text=f"Standart liste okunamadi: {exc}", bg="white", fg=RED).pack(anchor="w", padx=10, pady=8)
+            return
 
-        title = tk.Label(form, text="Cihaz Secimi", bg="white", font=("Segoe UI", 12, "bold"), anchor="w")
-        title.grid(row=0, column=0, columnspan=4, sticky="w", padx=14, pady=(12, 2))
-        hint = tk.Label(
-            form,
-            text="Secilmeyen marka bloklari ve sectiginiz adetten fazla unite satirlari silinir; "
-            "diger register satirlari (sensor, batarya, SAF/EAF mantigi) aynen kalir.",
-            bg="white", fg="#4b5563", font=("Segoe UI", 9), wraplength=740, justify="left", anchor="w",
-        )
-        hint.grid(row=1, column=0, columnspan=4, sticky="w", padx=14, pady=(0, 8))
+        head = tk.Frame(sec, bg="white")
+        head.pack(fill="x", padx=8, pady=(6, 2))
+        tk.Label(
+            head,
+            text="Standart Excel'de bulunan sensorler listelendi. Cihazinda olmayanlarin tikini kaldir.",
+            bg="white", fg="#4b5563", font=("Segoe UI", 9),
+        ).pack(side="left")
+        tk.Button(head, text="Tumunu Kaldir", font=("Segoe UI", 8), command=lambda: self._set_all_sensors(False)).pack(side="right", padx=3)
+        tk.Button(head, text="Tumunu Sec", font=("Segoe UI", 8), command=lambda: self._set_all_sensors(True)).pack(side="right", padx=3)
+
+        grid = tk.Frame(sec, bg="white")
+        grid.pack(fill="x", padx=10, pady=(2, 8))
+        for group in self.sensor_groups:
+            row = tk.Frame(grid, bg="white")
+            row.pack(fill="x", pady=1)
+            vars_map: dict[str, tk.BooleanVar] = {}
+            if len(group.signals) == 1:
+                code, _label = group.signals[0]
+                var = tk.BooleanVar(value=True)
+                vars_map[code] = var
+                tk.Checkbutton(
+                    row, text=group.label, variable=var, bg="white", anchor="w",
+                    font=("Segoe UI", 10), activebackground="white", selectcolor="white",
+                ).pack(side="left")
+            else:
+                sigs = ", ".join(lbl for _c, lbl in group.signals)
+                tk.Label(row, text=f"{group.label} ({sigs})", bg="white", fg="#374151", font=("Segoe UI", 8), width=44, anchor="w").pack(side="left")
+                for code, label in group.signals:
+                    var = tk.BooleanVar(value=True)
+                    vars_map[code] = var
+                    tk.Checkbutton(
+                        row, text=label, variable=var, bg="white",
+                        font=("Segoe UI", 9), activebackground="white", selectcolor="white",
+                    ).pack(side="left", padx=2)
+            self.sensor_vars[group.obj] = vars_map
+
+    def _set_all_sensors(self, value: bool) -> None:
+        for by_code in self.sensor_vars.values():
+            for var in by_code.values():
+                var.set(value)
+
+    def _sensor_selection(self) -> dict[str, list[str]]:
+        return {
+            obj: [code for code, var in by_code.items() if var.get()]
+            for obj, by_code in self.sensor_vars.items()
+        }
+
+    # ---------- section 2: fans ----------
+    def _build_fan_section(self, parent) -> None:
+        sec = tk.LabelFrame(parent, text=" 2. Fan Secimi ", bg="white", font=("Segoe UI", 11, "bold"), labelanchor="nw")
+        sec.pack(fill="x", padx=2, pady=6)
 
         self.supply_brand_var = tk.StringVar(value=BRANDS["ebm"]["label"])
         self.exhaust_brand_var = tk.StringVar(value=BRANDS["ebm"]["label"])
         self.supply_count_var = tk.StringVar(value="1")
         self.exhaust_count_var = tk.StringVar(value="1")
-        self.device_var = tk.StringVar(value="AHU-01")
-        self.outdir_var = tk.StringVar(value="")
 
-        labels = [
-            ("Besleme fan markasi", self.supply_brand_var, 2),
-            ("Adet", self.supply_count_var, 3),
-            ("Egzoz fan markasi", self.exhaust_brand_var, 5),
-            ("Adet", self.exhaust_count_var, 6),
+        rows = [
+            ("Besleme fan markasi", 2),
+            ("Adet", 3),
+            ("Egzoz fan markasi", 5),
+            ("Adet", 6),
         ]
-        for text, var, row in labels:
-            tk.Label(form, text=text, bg="white", font=("Segoe UI", 10)).grid(row=row, column=0, sticky="w", padx=14, pady=5)
+        for text, row in rows:
+            tk.Label(sec, text=text, bg="white", font=("Segoe UI", 10)).grid(row=row, column=0, sticky="w", padx=14, pady=4)
 
-        self.supply_combo = self._brand_combo(form, self.supply_brand_var, row=2)
-        self.exhaust_combo = self._brand_combo(form, self.exhaust_brand_var, row=5)
+        self.supply_combo = self._brand_combo(sec, self.supply_brand_var, row=2)
+        self.exhaust_combo = self._brand_combo(sec, self.exhaust_brand_var, row=5)
         self.supply_combo.bind("<<ComboboxSelected>>", lambda e: self._on_brand_change(self.supply_combo, self.supply_count_var))
         self.exhaust_combo.bind("<<ComboboxSelected>>", lambda e: self._on_brand_change(self.exhaust_combo, self.exhaust_count_var))
 
-        self.supply_spin = self._count_spin(form, self.supply_count_var, row=3)
-        self.exhaust_spin = self._count_spin(form, self.exhaust_count_var, row=6)
+        self.supply_spin = self._count_spin(sec, self.supply_count_var, row=3)
+        self.exhaust_spin = self._count_spin(sec, self.exhaust_count_var, row=6)
         self._on_brand_change(self.supply_combo, self.supply_count_var)
         self._on_brand_change(self.exhaust_combo, self.exhaust_count_var)
+        tk.Label(
+            sec,
+            text="Secilmeyen marka ve adetten fazla unite satirlari (alarm satirlari dahil) silinir.",
+            bg="white", fg="#4b5563", font=("Segoe UI", 8),
+        ).grid(row=7, column=0, columnspan=4, sticky="w", padx=14, pady=(2, 6))
 
-        tk.Label(form, text="Cihaz adi", bg="white", font=("Segoe UI", 10)).grid(row=8, column=0, sticky="w", padx=14, pady=5)
-        dev = tk.Entry(form, textvariable=self.device_var, width=24, font=("Segoe UI", 10))
-        dev.grid(row=8, column=1, columnspan=3, sticky="w", padx=4, pady=5)
+    def _brand_combo(self, parent, var, row):
+        names = [label for label, _ in BRAND_CHOICES]
+        combo = ttk.Combobox(parent, textvariable=var, values=names, state="readonly", width=18, font=("Segoe UI", 10))
+        combo.grid(row=row, column=1, sticky="w", padx=4, pady=4)
+        return combo
 
-        tk.Label(form, text="Ciktı klasoru", bg="white", font=("Segoe UI", 10)).grid(row=9, column=0, sticky="w", padx=14, pady=5)
-        path_row = tk.Frame(form, bg="white")
-        path_row.grid(row=9, column=1, columnspan=3, sticky="w", padx=4, pady=5)
-        out_entry = tk.Entry(path_row, textvariable=self.outdir_var, width=48, font=("Segoe UI", 9))
-        out_entry.pack(side="left")
-        browse = tk.Button(path_row, text="Gozat...", font=("Segoe UI", 9), command=self._browse_outdir)
-        browse.pack(side="left", padx=6)
+    def _count_spin(self, parent, var, row):
+        spin = tk.Spinbox(parent, from_=1, to=1, textvariable=var, width=6, font=("Segoe UI", 10), justify="center")
+        spin.grid(row=row, column=1, sticky="w", padx=4, pady=4)
+        return spin
 
-        actions = tk.Frame(form, bg="white")
-        actions.grid(row=10, column=0, columnspan=4, sticky="ew", padx=14, pady=12)
+    def _selected_key(self, combo) -> str | None:
+        return dict(BRAND_CHOICES).get(combo.get())
+
+    def _on_brand_change(self, combo, count_var) -> None:
+        key = self._selected_key(combo)
+        spin = self.supply_spin if count_var is self.supply_count_var else self.exhaust_spin
+        if key is None:
+            spin.configure(values=[], state="disabled")
+            count_var.set("0")
+        else:
+            max_units = BRANDS[key]["max_units"]
+            spin.configure(values=[str(i) for i in range(1, max_units + 1)], state="normal")
+            current = count_var.get()
+            if not current.isdigit() or not 1 <= int(current) <= max_units:
+                count_var.set("1")
+
+    # ---------- section 3: output ----------
+    def _build_output_section(self, parent) -> None:
+        sec = tk.LabelFrame(parent, text=" 3. Cikti ", bg="white", font=("Segoe UI", 11, "bold"), labelanchor="nw")
+        sec.pack(fill="x", padx=2, pady=6)
+
+        self.device_var = tk.StringVar(value="AHU-01")
+        self.outdir_var = tk.StringVar(value="")
+
+        tk.Label(sec, text="Cihaz adi", bg="white", font=("Segoe UI", 10)).grid(row=0, column=0, sticky="w", padx=14, pady=5)
+        tk.Entry(sec, textvariable=self.device_var, width=24, font=("Segoe UI", 10)).grid(row=0, column=1, columnspan=3, sticky="w", padx=4, pady=5)
+
+        tk.Label(sec, text="Cikti klasoru", bg="white", font=("Segoe UI", 10)).grid(row=1, column=0, sticky="w", padx=14, pady=5)
+        path_row = tk.Frame(sec, bg="white")
+        path_row.grid(row=1, column=1, columnspan=3, sticky="w", padx=4, pady=5)
+        tk.Entry(path_row, textvariable=self.outdir_var, width=48, font=("Segoe UI", 9)).pack(side="left")
+        tk.Button(path_row, text="Gozat...", font=("Segoe UI", 9), command=self._browse_outdir).pack(side="left", padx=6)
+
+        actions = tk.Frame(sec, bg="white")
+        actions.grid(row=2, column=0, columnspan=4, sticky="ew", padx=14, pady=10)
         self.gen_btn = tk.Button(
             actions,
             text="EXCEL LISTELERINI OLUSTUR",
@@ -172,45 +276,16 @@ class App(tk.Tk):
             command=self._generate,
         )
         self.gen_btn.pack(side="left")
-        open_dir = tk.Button(actions, text="Klasoru Ac", font=("Segoe UI", 9), command=self._open_outdir)
-        open_dir.pack(side="left", padx=10)
+        tk.Button(actions, text="Klasoru Ac", font=("Segoe UI", 9), command=self._open_outdir).pack(side="left", padx=10)
 
-        bottom = tk.Frame(self, bg=BG)
-        bottom.pack(fill="both", expand=True, **pad)
-        tk.Label(bottom, text="Islem Kaydi", bg=BG, font=("Segoe UI", 10, "bold")).pack(anchor="w")
-        self.log = tk.Text(bottom, font=("Consolas", 9), bg="#0f172a", fg="#e2e8f0", relief="flat", height=12)
+        log_sec = tk.Frame(parent, bg=BG)
+        log_sec.pack(fill="both", expand=True, padx=2, pady=(2, 6))
+        tk.Label(log_sec, text="Islem Kaydi", bg=BG, font=("Segoe UI", 10, "bold")).pack(anchor="w")
+        self.log = tk.Text(log_sec, font=("Consolas", 9), bg="#0f172a", fg="#e2e8f0", relief="flat", height=9)
         self.log.pack(fill="both", expand=True, pady=(4, 0))
 
-    def _brand_combo(self, parent, var, row):
-        names = [label for label, _ in BRAND_CHOICES]
-        combo = ttk.Combobox(parent, textvariable=var, values=names, state="readonly", width=18, font=("Segoe UI", 10))
-        combo.grid(row=row, column=1, sticky="w", padx=4, pady=5)
-        return combo
-
-    def _count_spin(self, parent, var, row):
-        spin = tk.Spinbox(parent, from_=1, to=1, textvariable=var, width=6, font=("Segoe UI", 10), justify="center")
-        spin.grid(row=row, column=1, sticky="w", padx=4, pady=5)
-        return spin
-
-    def _selected_key(self, combo) -> str | None:
-        label = combo.get()
-        return dict(BRAND_CHOICES).get(label)
-
-    def _on_brand_change(self, combo, count_var) -> None:
-        key = self._selected_key(combo)
-        spin = self.supply_spin if count_var is self.supply_count_var else self.exhaust_spin
-        if key is None:
-            spin.configure(values=[], state="disabled")
-            count_var.set("0")
-        else:
-            max_units = BRANDS[key]["max_units"]
-            spin.configure(values=[str(i) for i in range(1, max_units + 1)], state="normal")
-            current = count_var.get()
-            if not current.isdigit() or not 1 <= int(current) <= max_units:
-                count_var.set("1")
-
     def _browse_outdir(self) -> None:
-        chosen = filedialog.askdirectory(title="Ciktı klasoru")
+        chosen = filedialog.askdirectory(title="Cikti klasoru")
         if chosen:
             self.outdir_var.set(chosen)
 
@@ -221,7 +296,7 @@ class App(tk.Tk):
 
             os.startfile(target)  # type: ignore[attr-defined]
         else:
-            messagebox.showinfo("Bilgi", "Once bir ciktı klasoru secin.")
+            messagebox.showinfo("Bilgi", "Once bir cikti klasoru secin.")
 
     # ---------- logging ----------
     def log_line(self, text: str) -> None:
@@ -234,15 +309,17 @@ class App(tk.Tk):
     def _generate(self) -> None:
         supply_key = self._selected_key(self.supply_combo)
         exhaust_key = self._selected_key(self.exhaust_combo)
-        if supply_key is None and exhaust_key is None:
-            messagebox.showwarning("Secim yok", "En az bir fan yönü için marka secin (besleme veya egzoz).")
+        sensors = self._sensor_selection()
+        any_sensor = any(sensors.values()) if sensors else True
+        if not any_sensor and not supply_key and not exhaust_key:
+            messagebox.showwarning("Secim yok", "Sensor, besleme ve egzoz icin hic secim yok.")
             return
 
         count = int(self.supply_count_var.get() or 1) if supply_key else 0
         ecount = int(self.exhaust_count_var.get() or 1) if exhaust_key else 0
         out_dir = self.outdir_var.get().strip()
         if not out_dir:
-            out_dir = filedialog.askdirectory(title="Ciktı klasoru")
+            out_dir = filedialog.askdirectory(title="Cikti klasoru")
             if not out_dir:
                 return
             self.outdir_var.set(out_dir)
@@ -257,19 +334,27 @@ class App(tk.Tk):
                 supply_count=count,
                 exhaust_brand=exhaust_key,
                 exhaust_count=ecount,
+                sensor_selection=sensors,
             )
-        except Exception as exc:  # noqa: BLE001 - surface any failure to the user
+        except Exception as exc:  # noqa: BLE001
             messagebox.showerror("Hata", f"Listeler olusturulamadi:\n{exc}")
             self.log_line(f"HATA: {exc}")
         else:
             for res in results:
                 self.log_line(
-                    f"[{res.protocol}] {res.kept_fan_rows}/{res.total_fan_rows} fan satiri korundu, "
-                    f"{res.removed_rows} satir silindi -> {res.output}"
+                    f"[{res.protocol}] fan {res.kept_fan_rows}/{res.total_fan_rows} satir, "
+                    f"toplam {res.removed_rows} satir silindi -> {res.output}"
                 )
+            brand_labels = {b["label"] for b in BRANDS.values()}
+            sensor_groups = {
+                k: v
+                for r in results
+                for k, v in r.removed_by_group.items()
+                if not any(bl in k for bl in brand_labels)
+            }
             self.log_line("")
-            self.log_line("Tum silinen bloklar: " + (", ".join(
-                f"{k} ({v} satir)" for r in results for k, v in sorted(r.removed_by_group.items())
+            self.log_line("Silinen sensor gruplari: " + (", ".join(
+                f"{k} ({v})" for k, v in sorted(sensor_groups.items())
             ) or "-"))
             messagebox.showinfo("Tamam", f"{results[0].output.parent} klasorunde 2 liste olusturuldu.")
         finally:
@@ -307,7 +392,7 @@ class App(tk.Tk):
     def _check_failed(self, message: str, auto: bool) -> None:
         self._checking = False
         if auto and self._update_info:
-            return  # keep showing a previously found update
+            return
         self._set_status(("Kontrol basarisiz: " + message)[:70], RED if not auto else GRAY)
 
     def _check_done(self, info: updater.ReleaseInfo | None) -> None:
@@ -364,7 +449,7 @@ class App(tk.Tk):
         try:
             cfg = json.loads(config_file().read_text(encoding="utf-8"))
         except Exception:  # noqa: BLE001
-            return
+            cfg = {}
         self.supply_brand_var.set(cfg.get("supply_brand", self.supply_brand_var.get()))
         self.exhaust_brand_var.set(cfg.get("exhaust_brand", self.exhaust_brand_var.get()))
         self.supply_count_var.set(str(cfg.get("supply_count", 1)))
@@ -373,6 +458,14 @@ class App(tk.Tk):
         self.outdir_var.set(cfg.get("outdir", str(Path.home() / "Documents")))
         self._on_brand_change(self.supply_combo, self.supply_count_var)
         self._on_brand_change(self.exhaust_combo, self.exhaust_count_var)
+        sensors = cfg.get("sensors") or {}
+        for obj, by_code in self.sensor_vars.items():
+            saved = sensors.get(obj)
+            if saved is None:
+                continue
+            chosen = set(saved)
+            for code, var in by_code.items():
+                var.set(code in chosen)
 
     def _save_config(self) -> None:
         cfg = {
@@ -382,13 +475,14 @@ class App(tk.Tk):
             "exhaust_count": self.exhaust_count_var.get(),
             "device": self.device_var.get(),
             "outdir": self.outdir_var.get(),
+            "sensors": {obj: [c for c, v in by.items() if v.get()] for obj, by in self.sensor_vars.items()},
         }
         try:
             config_file().write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
         except OSError:
             pass
 
-    def on_close(self) -> None:  # noqa: RT0101 - used via protocol
+    def on_close(self) -> None:
         self._save_config()
         self.destroy()
 
