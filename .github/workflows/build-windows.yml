@@ -1,0 +1,57 @@
+name: Build Windows EXE
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt pytest
+      - run: pytest -v
+
+  build:
+    runs-on: windows-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt pyinstaller pytest
+      - run: pytest -v
+      - name: PyInstaller
+        run: >
+          pyinstaller --onefile --noconsole --name RegisterSelecter
+          --add-data "data;data" app.py
+      - name: Smoke test (EXE acilma)
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath "dist/RegisterSelecter.exe" -PassThru
+          Start-Sleep -Seconds 6
+          if ($p.HasExited) { Write-Host "EXE kapandi, kod: $($p.ExitCode)"; exit 1 }
+          Stop-Process -Id $p.Id -Force
+          Write-Host "Smoke test OK"
+      - name: Read version
+        id: ver
+        shell: bash
+        run: echo "version=$(python -c 'import version; print(version.__version__)')" >> "$GITHUB_OUTPUT"
+      - name: GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.ver.outputs.version }}
+          name: RegisterSelecter v${{ steps.ver.outputs.version }}
+          files: dist/RegisterSelecter.exe
+          make_latest: "true"
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
