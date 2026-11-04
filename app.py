@@ -637,7 +637,13 @@ class App(tk.Tk):
                 "Kaynak koddan calisiyorsunuz.",
             )
             return
-        if not messagebox.askyesno("Guncelle", f"{info.asset_name} indirilip mevcut surumun yerine konulsun mu?"):
+        ver = ".".join(map(str, info.version))
+        size = f" ({fmt_mb(info.size)})" if info.size else ""
+        if not messagebox.askyesno(
+            "Guncelle",
+            f"v{ver} surumu{size} indirilecek, mevcut EXE'nin yerine konacak ve "
+            f"program yeniden baslayacak.\nSu anki surum: v{__version__}. Devam edilsin mi?",
+        ):
             return
         self._downloading = True
         self.update_btn.configure(state="disabled")
