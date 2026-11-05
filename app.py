@@ -15,6 +15,9 @@ from register_engine import (
     ALARM_GROUP_PREFIX,
     ALWAYS_DROPPED_OBJECTS,
     BRANDS,
+    CO_VALVE_GROUP_PREFIX,
+    CO_VALVE_OBJECT,
+    CO_VALVE_TOKENS,
     DAMPER_PARAM_GROUP_PREFIX,
     DamperGroup,
     FAN_DOOR_GROUP_PREFIX,
@@ -570,11 +573,12 @@ class App(tk.Tk):
     def _alarm_selection(self) -> list[str]:
         return [alarm.token for alarm in self.alarm_alarms if self.alarm_vars[alarm.token].get()]
 
-    # ---------- section 7: su vanalari (CV / HV) ----------
+    # ---------- section 7: su vanalari (CV / HV / CO) ----------
     def _build_valve_section(self, parent) -> None:
-        sec = tk.LabelFrame(parent, text=" 7. Su Vanalari (CV / HV) ", bg="white", font=("Segoe UI", 11, "bold"), labelanchor="nw")
+        sec = tk.LabelFrame(parent, text=" 7. Su Vanalari (CV / HV / CO) ", bg="white", font=("Segoe UI", 11, "bold"), labelanchor="nw")
         sec.pack(fill="x", padx=2, pady=6)
 
+        self.co_valve_var = tk.BooleanVar(value=False)
         self.valve_vars: dict[str, tk.BooleanVar] = {}
         self.valve_checks: dict[str, tk.Checkbutton] = {}
         self.valve_pack_opts: dict[str, dict] = {}
@@ -616,6 +620,24 @@ class App(tk.Tk):
         for group in self.valve_groups:
             if not group.parent:
                 self._sync_valve_children(group)
+
+        tk.Checkbutton(
+            box,
+            text=f"CO vanasi / change over ({len(CO_VALVE_TOKENS)} satir)",
+            variable=self.co_valve_var,
+            bg="white",
+            font=("Segoe UI", 10, "bold"),
+            activebackground="white",
+            selectcolor="white",
+        ).pack(anchor="w", pady=(8, 0))
+        tk.Label(
+            box,
+            text="CO tiki " + ", ".join(CO_VALVE_TOKENS) + f" satirlarini {CO_VALVE_OBJECT} altindan listeye ekler.",
+            bg="white", fg="#4b5563", font=("Segoe UI", 8), wraplength=720, justify="left", anchor="w",
+        ).pack(anchor="w", pady=(2, 0))
+
+    def _co_valve_enabled(self) -> bool:
+        return bool(self.co_valve_var.get())
 
     def _sync_valve_children(self, parent_group: ValveGroup) -> None:
         """2. vana kutusunu 1. vana secimine gore goruntule/gizle."""
@@ -754,6 +776,7 @@ class App(tk.Tk):
         stages = self._stage_selection()
         features = self._feature_selection()
         valves = self._valve_selection()
+        co_valve = self._co_valve_enabled()
         rotor = self._rotor_mode()
         hum_control = self._hum_control_enabled()
         alarms = self._alarm_selection()
@@ -789,6 +812,7 @@ class App(tk.Tk):
                 stage_selection=stages,
                 feature_selection=features,
                 valve_selection=valves,
+                co_valve=co_valve,
                 rotor_mode=rotor,
                 hum_control=hum_control,
                 alarm_selection=alarms,
@@ -804,6 +828,7 @@ class App(tk.Tk):
                     f"kademe {res.kept_stage_rows}/{res.total_stage_rows}, "
                     f"blok {res.kept_feature_rows}/{res.total_feature_rows}, "
                     f"vana {res.kept_valve_rows}/{res.total_valve_rows}, "
+                    f"co vanasi {res.kept_co_valve_rows}/{res.total_co_valve_rows}, "
                     f"rotor {res.kept_rotor_rows}/{res.total_rotor_rows}, "
                     f"nem kontrolu {res.kept_hum_rows}/{res.total_hum_rows}, "
                     f"filtre alarmi {res.kept_alarm_rows}/{res.total_alarm_rows} satir, "
@@ -817,6 +842,7 @@ class App(tk.Tk):
                 ("Silinen kademe satirlari", "stage"),
                 ("Silinen blok satirlari", "feature"),
                 ("Secilmeyen vana satirlari", "valve"),
+                ("Secilmeyen CO vanasi satirlari", "covalve"),
                 ("Rotor satirlari", "rotor"),
                 ("Nem kontrolu satirlari", "hum"),
                 ("Secilmeyen filtre alarmlari", "alarm"),
@@ -841,7 +867,7 @@ class App(tk.Tk):
         dropped_labels = tuple(ALWAYS_DROPPED_OBJECTS.values())
         buckets: dict[str, dict[str, int]] = {
             "sensor": {}, "damper": {}, "stage": {}, "feature": {},
-            "valve": {}, "rotor": {}, "hum": {}, "alarm": {}, "dropped": {}, "fan": {}
+            "valve": {}, "covalve": {}, "rotor": {}, "hum": {}, "alarm": {}, "dropped": {}, "fan": {}
         }
         for res in results:
             for name, count in res.removed_by_group.items():
@@ -853,6 +879,8 @@ class App(tk.Tk):
                     kind = "fan"
                 elif name.startswith(VALVE_GROUP_PREFIX):
                     kind = "valve"
+                elif name.startswith(CO_VALVE_GROUP_PREFIX):
+                    kind = "covalve"
                 elif name.startswith(ROTOR_GROUP_PREFIX):
                     kind = "rotor"
                 elif name.startswith(HUM_CTRL_GROUP_PREFIX):
@@ -1092,6 +1120,7 @@ class App(tk.Tk):
         if rotor_mode in ROTOR_MODES:
             self.rotor_var.set(ROTOR_MODES[rotor_mode])
         self.hum_control_var.set(bool(cfg.get("hum_control", False)))
+        self.co_valve_var.set(bool(cfg.get("co_valve", False)))
 
     def _save_config(self) -> None:
         cfg = {
@@ -1106,6 +1135,7 @@ class App(tk.Tk):
             "stages": self._stage_selection(),
             "features": self._feature_selection(),
             "valves": self._valve_selection(),
+            "co_valve": self._co_valve_enabled(),
             "rotor_mode": self._rotor_mode(),
             "hum_control": self._hum_control_enabled(),
             "alarms": self._alarm_selection(),

@@ -5,9 +5,12 @@ from openpyxl import load_workbook
 
 from register_engine import (
     BRANDS,
+    CO_VALVE_GROUP_PREFIX,
+    CO_VALVE_TOKENS,
     PROTOCOLS,
     VALVE_GROUP_PREFIX,
     RowClassification,
+    classify_co_valve,
     classify_damper,
     classify_row,
     classify_valve,
@@ -1114,3 +1117,98 @@ def test_generate_passes_hum_control(tmp_path):
     for res in results:
         assert res.total_hum_rows == len(HUM_CTRL_TOKENS)
         assert res.kept_hum_rows == 0
+
+
+# ---------- CO (change over) vanasi tik secimi ----------
+
+# Veriden dogrulanan satir adlari; bacnet'te sonuna "=obiekti_id" eklenir,
+# bu yuzden testlerde alt dize olarak aranir.
+CO_ROW_TOKENS = (
+    "COControl_Select",
+    "CoverVModeSel",
+    "CoverMan_Ref",
+    "COContTempValue",
+    "ChangeOvFdb",
+    "ChangeOvPos",
+    "COControl_Select_BMS",
+    "CoverVModeSel_BMS",
+    "CoverMan_Ref_BMS",
+    "ChangeOverActive",
+    "ChangeOverMode",
+)
+CO_VALVE_OFF_GROUP = "CO vanasi - secilmedi"
+
+
+def test_co_valve_tokens_match_data():
+    assert CO_VALVE_TOKENS == CO_ROW_TOKENS
+    # CO satirlari CV/HV vana satirlarindan tamamen ayridir
+    for token in CO_VALVE_TOKENS:
+        assert classify_valve("TmpControl", token) is None
+
+
+@pytest.mark.parametrize("protocol", ["modbus", "bacnet"])
+def test_co_valve_off_removes_all_rows(tmp_path, protocol):
+    res = _sensor_run(tmp_path, protocol, None, co_valve=False, out_name=f"co_off_{protocol}.xlsx")
+    assert res.total_co_valve_rows == len(CO_ROW_TOKENS)
+    assert res.kept_co_valve_rows == 0
+    assert res.removed_rows == FAN_BASELINE_REMOVED + len(CO_ROW_TOKENS)
+    assert res.removed_by_group[CO_VALVE_OFF_GROUP] == len(CO_ROW_TOKENS)
+    names = _names(res, protocol)
+    for token in CO_ROW_TOKENS:
+        assert rf"TmpControl\{token}" not in names
+    # vanalar ve sicaklik setpointi CO tikinden etkilenmez
+    assert r"TmpControl\CV_Pos" in names
+    assert r"TmpControl\Tmp_Set_BMS" in names
+
+
+@pytest.mark.parametrize("protocol", ["modbus", "bacnet"])
+def test_co_valve_on_keeps_all_rows(tmp_path, protocol):
+    res = _sensor_run(tmp_path, protocol, None, co_valve=True, out_name=f"co_on_{protocol}.xlsx")
+    assert res.kept_co_valve_rows == len(CO_ROW_TOKENS)
+    assert res.removed_rows == FAN_BASELINE_REMOVED
+    assert not [key for key in res.removed_by_group if key.startswith(CO_VALVE_GROUP_PREFIX)]
+    names = _names(res, protocol)
+    for token in CO_ROW_TOKENS:
+        assert rf"TmpControl\{token}" in names
+
+
+def test_co_valve_step_unused_keeps_all_rows(tmp_path):
+    """CO tik adimi kullanilmazsa (co_valve None) davranis degismez."""
+    res = _sensor_run(tmp_path, "modbus", None)
+    assert res.total_co_valve_rows == 0
+    names = _names(res, "modbus")
+    for token in CO_ROW_TOKENS:
+        assert rf"TmpControl\{token}" in names
+
+
+def test_co_valve_independent_of_valve_selection(tmp_path):
+    """CV/HV hic secilmese de CO tiki kendi 11 satirini getirir."""
+    res = _sensor_run(
+        tmp_path,
+        "modbus",
+        None,
+        valve_selection=[],
+        co_valve=True,
+        out_name="co_without_valves.xlsx",
+    )
+    assert res.kept_valve_rows == 0
+    assert res.kept_co_valve_rows == len(CO_ROW_TOKENS)
+    names = _names(res, "modbus")
+    assert r"TmpControl\CV_Pos" not in names
+    assert r"TmpControl\ChangeOverMode" in names
+
+
+def test_generate_passes_co_valve(tmp_path):
+    results = generate(
+        data_dir=DATA_DIR,
+        output_dir=tmp_path,
+        device_prefix="AHU-12",
+        supply_brand="ebm",
+        supply_count=1,
+        exhaust_brand="ebm",
+        exhaust_count=1,
+        co_valve=False,
+    )
+    for res in results:
+        assert res.total_co_valve_rows == len(CO_ROW_TOKENS)
+        assert res.kept_co_valve_rows == 0

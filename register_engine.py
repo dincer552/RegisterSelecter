@@ -2,8 +2,9 @@
 
 Silinen satirlar: secilmeyen marka/adet disindaki fan bloklari (EBM, Danfoss,
 Ziehl-Abegg, WellDrive), tiklanmayan sicaklik-nem-CO2 sensor satirlari,
-adetini asan damper (klape) motoru satirlari, nemlendirici kademe satirlari ve
-nem kontrolu secilmeyince nem set ayar satirlari.
+adetini asan damper (klape) motoru satirlari, nemlendirici kademe satirlari,
+tiklanmayan CO vanasi satirlari ve nem kontrolu secilmeyince nem set ayar
+satirlari.
 Sabit kalan satirlar: AHU start, batarya, SAF/EAF mantigi, BmsTemp_Hum ve genel
 alarm satirlari. Secimden bagimsiz
 her zaman silinen satirlar: TempAVG blogu ve MBUnit (BMS iletisim kontrol)
@@ -432,6 +433,29 @@ def list_valve_groups(data_dir: Path) -> list[ValveGroup]:
     return [merged[key] for key in sorted(merged, key=_valve_sort_key)]
 
 
+# CO (change over) vanasi: TmpControl altindaki bu satirlar vana adimindaki
+# ayri tik ile listeye girer; tik yoksa hicbiri kalmaz.
+CO_VALVE_OBJECT = "TmpControl"
+CO_VALVE_TOKENS: tuple[str, ...] = (
+    "COControl_Select",
+    "CoverVModeSel",
+    "CoverMan_Ref",
+    "COContTempValue",
+    "ChangeOvFdb",
+    "ChangeOvPos",
+    "COControl_Select_BMS",
+    "CoverVModeSel_BMS",
+    "CoverMan_Ref_BMS",
+    "ChangeOverActive",
+    "ChangeOverMode",
+)
+CO_VALVE_GROUP_PREFIX = "CO vanasi - "
+
+
+def classify_co_valve(obj: str | None, tok: str | None) -> bool:
+    return obj == CO_VALVE_OBJECT and bool(tok) and tok in CO_VALVE_TOKENS
+
+
 # Rotor (isi geri kazanim) blogu mod secimine gore listeye girer:
 #   "yok"          -> hicbir rotor satiri kalmayin
 #   "proportional" -> RotorControl altindaki tum satirlar kalir
@@ -689,6 +713,8 @@ class FilterResult:
     total_feature_rows: int = 0
     kept_valve_rows: int = 0
     total_valve_rows: int = 0
+    kept_co_valve_rows: int = 0
+    total_co_valve_rows: int = 0
     kept_rotor_rows: int = 0
     total_rotor_rows: int = 0
     kept_hum_rows: int = 0
@@ -758,6 +784,7 @@ def filter_standard_list(
     stage_selection: dict[str, int] | None = None,
     feature_selection: dict[str, list[str]] | None = None,
     valve_selection: list[str] | None = None,
+    co_valve: bool | None = None,
     rotor_mode: str | None = None,
     hum_control: bool | None = None,
     alarm_selection: list[str] | None = None,
@@ -795,6 +822,7 @@ def filter_standard_list(
     chosen_features = feature_selection or {}
 
     valve_enabled = valve_selection is not None
+    co_enabled = co_valve is not None
     chosen_valves = set(valve_selection or [])
     valve_labels: dict[str, str] = {}
     if valve_enabled:
@@ -820,6 +848,8 @@ def filter_standard_list(
     total_feature_rows = 0
     kept_valve_rows = 0
     total_valve_rows = 0
+    kept_co_valve_rows = 0
+    total_co_valve_rows = 0
     kept_rotor_rows = 0
     total_rotor_rows = 0
     kept_hum_rows = 0
@@ -894,6 +924,12 @@ def filter_standard_list(
                 kept_valve_rows += 1
                 continue
             group = f"{VALVE_GROUP_PREFIX}{valve_labels.get(valve_key, valve_key)}"
+        elif co_enabled and classify_co_valve(parsed_obj, parsed_tok):
+            total_co_valve_rows += 1
+            if co_valve:
+                kept_co_valve_rows += 1
+                continue
+            group = f"{CO_VALVE_GROUP_PREFIX}secilmedi"
         elif rotor_mode is not None and parsed_obj == ROTOR_OBJECT:
             total_rotor_rows += 1
             if _rotor_row_kept(rotor_mode, parsed_tok or ""):
@@ -970,6 +1006,8 @@ def filter_standard_list(
         total_feature_rows=total_feature_rows,
         kept_valve_rows=kept_valve_rows,
         total_valve_rows=total_valve_rows,
+        kept_co_valve_rows=kept_co_valve_rows,
+        total_co_valve_rows=total_co_valve_rows,
         kept_rotor_rows=kept_rotor_rows,
         total_rotor_rows=total_rotor_rows,
         kept_hum_rows=kept_hum_rows,
@@ -998,6 +1036,7 @@ def generate(
     stage_selection: dict[str, int] | None = None,
     feature_selection: dict[str, list[str]] | None = None,
     valve_selection: list[str] | None = None,
+    co_valve: bool | None = None,
     rotor_mode: str | None = None,
     hum_control: bool | None = None,
     alarm_selection: list[str] | None = None,
@@ -1020,6 +1059,7 @@ def generate(
                 stage_selection=stage_selection,
                 feature_selection=feature_selection,
                 valve_selection=valve_selection,
+                co_valve=co_valve,
                 rotor_mode=rotor_mode,
                 hum_control=hum_control,
                 alarm_selection=alarm_selection,

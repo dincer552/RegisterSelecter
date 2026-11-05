@@ -64,7 +64,7 @@ cihaza özel Excel listeleri üreten Windows masaüstü programi.
    - `TempAVG` grubu (ortalama oda sicakligi) **hicbir sekilde** listeye eklenmez.
    - `MBUnit\BMS_Check_Read` ve `MBUnit\BMS_Check_Write` satirlari da **hicbir
      sekilde** listeye eklenmez (BMS baglanti test registerlari cihaz listesinde istenmez).
-7. **7. Su Vanalari (CV / HV)** – her vananin kendi satirlari tik kutusu ile
+7. **7. Su Vanalari (CV / HV / CO)** – her vananin kendi satirlari tik kutusu ile
    secilir: tikli vananin pozisyon (`CV_Pos` / `HV_Pos`), geri bildirim
    (`CV_Fdb_1` / `HV_Fdb_1`), `Mode Select` ve `Manuel Referans` satirlari listeye
    girer; tik kaldirilan vananin satirlari silinir.
@@ -73,6 +73,11 @@ cihaza özel Excel listeleri üreten Windows masaüstü programi.
      kapanir ve tekrar gizlenir.
    - Vana satirlari da standart Excel'den otomatik algilanir; standart listeye
      `TmpControl\CV2_Pos` gibi yeni bir vana satiri eklersen programda belirir.
+   - **`CO vanasi / change over (11 satir)`** ayri bir tiktir (varsayilan tikli
+     degil). Tikli ise `TmpControl` altindaki 11 change-over satiri listeye girer;
+     tikli degilse bu 11 satirin tamamı silinir. CV/HV tiklerinden **bagimsizdir**:
+     hic vana secilmese bile CO tiki kendi satirlarini getirir, CO tiki kalksa bile
+     secili vanalarin satirlari kalir.
 8. **8. Rotor (Isi Geri Kazanim)** – **Rotor kontrol modu** acilir listesi:
    `Yok` (varsayilan), `Oransal`, `On/Off`.
    - `Yok` -> `RotorControl` satirlarinin **hicbiri** listeye girmez.
@@ -126,6 +131,10 @@ Islem Kaydi alaninin tekerlegi kendi metnini kaydirir.
 - Tik kaldirilan su vanasinin (CV1/CV2/HV1/HV2) tum satirlari silinir. `CV2`/`HV2`
   kutusu ana vana secilmedigi surece gorunmez ve secilemez; ana tik kaldirilirsa
   alt vana da otomatik kapanir. Islem kaydinda "Vana satirlari - ..." olarak listelenir.
+- **CO vanasi** tiki kaldirilirsa `TmpControl` altindaki 11 change-over satiri
+  silinir (islem kaydinda "CO vanasi - secilmedi"). CV/HV tikleriyle bir ilgisi
+  yoktur; `TmpControl`'in diger satirlari (`Tmp_Set_BMS`, `Cooling_Active` ...)
+  her zaman listeye girer.
 - Rotor modu `Yok` ise `RotorControl` satirlarinin 6'si da silinir ("Rotor - rotor
   secilmedi"); `On/Off` ise yalnizca `RotorActive` + `Rotor Alarm` kalir, kalan 4
   satir "Rotor - oransal satirlar (on/off secildi)" olarak listelenir.
@@ -216,6 +225,30 @@ Toplam **19 alarm satiri/protokol**. Ayrica:
 Toplam **13 satir/protokol**. `CV2` su an sadece geri bildirim satirina sahip
 (standart listede `CV2ModeSel` / `CV2_Man_Ref` / `CV_Pos2` yok); bu satirlar
 standart listeye eklendiginde 2. vana kutusunda otomatik gorunur.
+
+## CO (change over) vanasi satirlari
+
+`TmpControl` blogunun vana kalibina uymayan 11 change-over satiri ayni adimda
+**ayri tik** ile secilir (varsayilan kapali):
+
+| Token | Aciklama |
+|---|---|
+| `COControl_Select` | CO kontrol secimi |
+| `CoverVModeSel` | Cover valve mod secimi |
+| `CoverMan_Ref` | Cover valve manuel referans |
+| `COContTempValue` | CO kontrol sicaklik degeri |
+| `ChangeOvFdb` | Change-over geri bildirim |
+| `ChangeOvPos` | Change-over pozisyon |
+| `COControl_Select_BMS` | BMS CO kontrol secimi |
+| `CoverVModeSel_BMS` | BMS cover valve mod secimi |
+| `CoverMan_Ref_BMS` | BMS cover valve manuel referans |
+| `ChangeOverActive` | Change-over aktif |
+| `ChangeOverMode` | Change-over modu |
+
+Toplam **11 satir/protokol** (modbus 531-541, BACnet 532-542). Bu tokenlar
+`CV`/`HV` vana kalibina uydugu diye vana tiklerinden ayrilir: liste sabit bir
+token tablosuyla (`CO_VALVE_TOKENS`) eslesir, standart listeye yeni
+`TmpControl\CO...` satiri eklersen tabloya bir satir eklemek yeterlidir.
 
 ## Kademe gruplari (standart listeden otomatik)
 
