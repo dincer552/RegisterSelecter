@@ -50,6 +50,8 @@ cihaza özel Excel listeleri üreten Windows masaüstü programi.
    icinde de guncellenir. Pop-up acikken fare tekerlegi pop-up listesini kaydirdir.
    - `Alarm_Reset\Alarm_Reset` satiri **her zaman** listeye eklenir (tik ile degismez).
    - `TempAVG` grubu (ortalama oda sicakligi) **hicbir sekilde** listeye eklenmez.
+   - `MBUnit\BMS_Check_Read` ve `MBUnit\BMS_Check_Write` satirlari da **hicbir
+     sekilde** listeye eklenmez (BMS baglanti test registerlari cihaz listesinde istenmez).
 7. **7. Su Vanalari (CV / HV)** – her vananin kendi satirlari tik kutusu ile
    secilir: tikli vananin pozisyon (`CV_Pos` / `HV_Pos`), geri bildirim
    (`CV_Fdb_1` / `HV_Fdb_1`), `Mode Select` ve `Manuel Referans` satirlari listeye
@@ -88,7 +90,8 @@ Islem Kaydi alaninin tekerlegi kendi metnini kaydirir.
 - Blok tiklari (SAF / EAF / RunAround) kaldirilirsa o blogun tum satirlari silinir;
   blok secili degilse transmitter tiki tek basina hicbir satir geri getirmez.
 - Pop-up'ta tik kaldirilan filtre alarmi satiri silinir; `Alarm_Reset` her zaman
-  kalir, `TempAVG` grubu her zaman silinir (secimden bagimsiz).
+  kalir, `TempAVG` grubu ve `MBUnit\BMS_Check_Read/Write` satirlari her zaman
+  silinir (secimden bagimsiz).
 - Tik kaldirilan su vanasinin (CV1/CV2/HV1/HV2) tum satirlari silinir. `CV2`/`HV2`
   kutusu ana vana secilmedigi surece gorunmez ve secilemez; ana tik kaldirilirsa
   alt vana da otomatik kapanir. Islem kaydinda "Vana satirlari - ..." olarak listelenir.
@@ -156,6 +159,9 @@ Toplam **19 alarm satiri/protokol**. Ayrica:
 
 - `Alarm_Reset\Alarm_Reset` (1 satir) **sabit** kalir, pop-up'ta listelenmez.
 - `TempAVG` grubu (5 satir) secimden bagimsiz **her zaman silinir**.
+- `MBUnit` grubu (2 satir: `BMS_Check_Read`, `BMS_Check_Write`) da secimden
+  bagimsiz **her zaman silinir**; islem kaydinda "MBUnit (BMS iletisim kontrolu)
+  - kullanilmiyor" olarak listelenir.
 - Standart listeye yeni `Alarm\...` satiri eklersen pop-up'ta otomatik belirir.
 
 ## Su vanalari (standart listeden otomatik)

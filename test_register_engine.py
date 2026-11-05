@@ -35,8 +35,12 @@ BACNET = DATA_DIR / PROTOCOLS["bacnet"]["file"]
 EXPECTED_TOTAL_FAN_ROWS = 216
 # TempAVG (ortalama oda sicakligi) bloge register listesine HIC eklenmez.
 EXPECTED_TOTAL_TEMPAVG_ROWS = 5
+# MBUnit (BMS_Check_Read / BMS_Check_Write) satirlari da HIC eklenmez.
+EXPECTED_TOTAL_MBUNIT_ROWS = 2
 # EBM 4+4 secildiginde listede kalan tek "silinmeyen" sayilari bu temele gore okunur.
-FAN_BASELINE_REMOVED = EXPECTED_TOTAL_FAN_ROWS - 64 + EXPECTED_TOTAL_TEMPAVG_ROWS
+FAN_BASELINE_REMOVED = (
+    EXPECTED_TOTAL_FAN_ROWS - 64 + EXPECTED_TOTAL_TEMPAVG_ROWS + EXPECTED_TOTAL_MBUNIT_ROWS
+)
 
 
 @pytest.mark.parametrize(
@@ -76,9 +80,28 @@ def test_full_selection_keeps_everything(standard, out_name, tmp_path):
     )
     assert res.total_fan_rows == EXPECTED_TOTAL_FAN_ROWS
     assert res.kept_fan_rows == 64  # 4+4 EBM unites x 8 satir
-    # fan disinda yalnizca TempAVG bloge kalici olarak silinir
+    # fan disinda yalnizca TempAVG + MBUnit bloge kalici olarak silinir
     assert res.removed_rows == FAN_BASELINE_REMOVED
     assert res.removed_by_group["TempAVG (ortalama oda sicakligi) - kullanilmiyor"] == EXPECTED_TOTAL_TEMPAVG_ROWS
+    assert res.removed_by_group["MBUnit (BMS iletisim kontrolu) - kullanilmiyor"] == EXPECTED_TOTAL_MBUNIT_ROWS
+
+
+def test_mbunit_rows_are_never_included(tmp_path):
+    """BMS_Check_Read/Write hicbir secim kombinasyonunda listeye girmemeli."""
+    for kwargs in (
+        {"supply_brand": None, "supply_count": 0, "exhaust_brand": None, "exhaust_count": 0},
+        {"supply_brand": "ebm", "supply_count": 4, "exhaust_brand": "ebm", "exhaust_count": 4},
+    ):
+        for protocol in ("modbus", "bacnet"):
+            res = filter_standard_list(
+                protocol=protocol,
+                standard_file=DATA_DIR / PROTOCOLS[protocol]["file"],
+                output_file=tmp_path / f"mbunit_{protocol}_{kwargs['supply_brand']}.xlsx",
+                **kwargs,
+            )
+            names = _names(res, protocol)
+            assert r"MBUnit\BMS_Check_Read" not in names
+            assert r"MBUnit\BMS_Check_Write" not in names
 
 
 def test_ebm_supply_2_exhaust_1(tmp_path):
@@ -92,7 +115,9 @@ def test_ebm_supply_2_exhaust_1(tmp_path):
         exhaust_count=1,
     )
     assert res.kept_fan_rows == 16 + 8  # 2 supply + 1 exhaust unite
-    assert res.removed_rows == EXPECTED_TOTAL_FAN_ROWS - 24 + EXPECTED_TOTAL_TEMPAVG_ROWS
+    assert res.removed_rows == (
+        EXPECTED_TOTAL_FAN_ROWS - 24 + EXPECTED_TOTAL_TEMPAVG_ROWS + EXPECTED_TOTAL_MBUNIT_ROWS
+    )
 
     wb = load_workbook(res.output)
     ws = wb.active
@@ -710,7 +735,10 @@ def test_aspdoorsw_needs_any_exhaust_fan(tmp_path, protocol):
     assert ASPDOORSW_GROUP not in one_exhaust.removed_by_group
     for res, door_rows in ((one_exhaust, 0), (no_exhaust, 1)):
         assert res.removed_rows == (
-            (EXPECTED_TOTAL_FAN_ROWS - res.kept_fan_rows) + EXPECTED_TOTAL_TEMPAVG_ROWS + door_rows
+            (EXPECTED_TOTAL_FAN_ROWS - res.kept_fan_rows)
+            + EXPECTED_TOTAL_TEMPAVG_ROWS
+            + EXPECTED_TOTAL_MBUNIT_ROWS
+            + door_rows
         )
 
 

@@ -474,7 +474,7 @@ class App(tk.Tk):
             sec,
             text="Filtre kirlilik alarmlari standart listeden okunur ve pop-up icinde tek tek secilir; "
             "secilmeyen alarm satiri listeden silinir. Alarm_Reset registeri her zaman eklenir, "
-            "TempAVG grubu ise hicbir sekilde eklenmez.",
+            "TempAVG ve MBUnit (BMS_Check_Read/Write) satirlari ise hicbir sekilde eklenmez.",
             bg="white", fg="#4b5563", font=("Segoe UI", 9), wraplength=760, justify="left", anchor="w",
         ).pack(fill="x", padx=10, pady=(6, 2))
 

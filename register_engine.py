@@ -3,8 +3,9 @@
 Silinen satirlar: secilmeyen marka/adet disindaki fan bloklari (EBM, Danfoss,
 Ziehl-Abegg, WellDrive), tiklanmayan sicaklik-nem-CO2 sensor satirlari ve
 adetini asan damper (klape) motoru satirlari. Sabit kalan satirlar: AHU start,
-batarya, SAF/EAF mantigi, BmsTemp_Hum, TempAVG, DamperCont/BypassDmpCont ve
-genel alarm satirlari.
+batarya, SAF/EAF mantigi, BmsTemp_Hum, DamperCont/BypassDmpCont ve genel alarm
+satirlari. Secimden bagimsiz her zaman silinen satirlar: TempAVG blogu ve
+MBUnit (BMS iletisim kontrol) satirlari.
 """
 
 from __future__ import annotations
@@ -400,7 +401,10 @@ def list_valve_groups(data_dir: Path) -> list[ValveGroup]:
 FILTER_ALARM_OBJECT = "Alarm"
 ALARM_GROUP_PREFIX = "Filtre alarmi - "
 # Hicbir cihazda kullanilmayan gruplar her zaman listeden cikarilir.
-ALWAYS_DROPPED_OBJECTS = {"TempAVG": "TempAVG (ortalama oda sicakligi)"}
+ALWAYS_DROPPED_OBJECTS = {
+    "TempAVG": "TempAVG (ortalama oda sicakligi)",
+    "MBUnit": "MBUnit (BMS iletisim kontrolu)",
+}
 # Sabit kalmasi gereken satirlar (sensor dalgina takilmamasi icin acikca tutulur).
 ALWAYS_KEPT_OBJECTS = {"Alarm_Reset"}
 # AHUStart\... kapak sensorleri: vantilator daima kalir, aspirator yalnizca
