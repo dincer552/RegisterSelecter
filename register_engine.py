@@ -1,9 +1,10 @@
 """Standart AHU register listelerini cihaz konfigürasyonuna gore filtreler.
 
 Silinen satirlar: secilmeyen marka/adet disindaki fan bloklari (EBM, Danfoss,
-Ziehl-Abegg, WellDrive), tiklanmayan sicaklik-nem-CO2 sensor satirlari ve
-adetini asan damper (klape) motoru satirlari. Sabit kalan satirlar: AHU start,
-batarya, SAF/EAF mantigi, BmsTemp_Hum ve genel alarm satirlari. Secimden bagimsiz
+Ziehl-Abegg, WellDrive), tiklanmayan sicaklik-nem-CO2 sensor satirlari,
+adetini asan damper (klape) motoru satirlari ve nemlendirici kademe satirlari.
+Sabit kalan satirlar: AHU start, batarya, SAF/EAF mantigi, BmsTemp_Hum ve genel
+alarm satirlari. Secimden bagimsiz
 her zaman silinen satirlar: TempAVG blogu ve MBUnit (BMS iletisim kontrol)
 satirlari. DamperCont / BypassDmpCont satirlari sirasiyla karisim ve by-pass
 motorunun varligina baglidir.
@@ -182,6 +183,13 @@ STAGE_GROUPS: dict[str, dict] = {
         "label": "Ön elektrikli ısıtıcı kademe sayısı",
         "stage_patterns": [r"^Heater(\d+)_ok$"],
     },
+    # Nemlendirici: sayilari icinde gecen kademeler (HumModeSel3.*, Hum_RunSts3,
+    # Hum_Alarm3) secilen sayiyi asamaz; sayi 0 ise blokun hicbir satiri kalmaz.
+    "Hum_Mod_Sel": {
+        "label": "Nemlendirici kademe sayısı",
+        "stage_patterns": [r"^HumModeSel(\d+)\.", r"^Hum_RunSts(\d+)$", r"^Hum_Alarm(\d+)$"],
+        "default_stages": 0,
+    },
 }
 
 _STAGE_PATTERNS = {
@@ -195,6 +203,7 @@ class StageGroup:
     label: str
     max_stages: int
     general_tokens: list[str] = field(default_factory=list)
+    default_stages: int | None = None  # None -> kademe sayisi kadar (tam liste)
 
 
 def _stage_unit(obj: str, tok: str) -> int | None:
@@ -225,7 +234,13 @@ def detect_stage_groups(ws, name_col: str, header_row: int) -> list[StageGroup]:
         else:
             found[obj]["max"] = max(found[obj]["max"], unit)
     return [
-        StageGroup(obj=obj, label=cfg["label"], max_stages=data["max"], general_tokens=list(data["general"]))
+        StageGroup(
+            obj=obj,
+            label=cfg["label"],
+            max_stages=data["max"],
+            general_tokens=list(data["general"]),
+            default_stages=cfg.get("default_stages"),
+        )
         for obj, cfg in STAGE_GROUPS.items()
         for data in [found[obj]]
         if data["max"] > 0
@@ -242,6 +257,13 @@ def list_stage_groups(data_dir: Path) -> list[StageGroup]:
             if cur is None or group.max_stages > cur.max_stages:
                 merged[group.obj] = group
     return [merged[obj] for obj in STAGE_GROUPS if obj in merged]
+
+
+def stage_default(group: StageGroup) -> int:
+    """Kutunun ilk acilisindaki kademe sayisi (nemlendirici varsayilan olarak 0)."""
+    if group.default_stages is None:
+        return group.max_stages
+    return min(max(group.default_stages, 0), group.max_stages)
 
 
 # Bloksal secimler (SAF/EAF kontrol, RunAround donma korumasi). "main" secilmezse

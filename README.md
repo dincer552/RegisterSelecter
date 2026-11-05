@@ -30,13 +30,22 @@ cihaza özel Excel listeleri üreten Windows masaüstü programi.
    **By-pass motoru 0 ise** `BypassDmpCont` satirlarinin hepsi
    (`BypassModeSelLocal_BMS`, `BypassManSetLocal_BMS`, `BypassSetLocal_BMS`,
    `BypassRecMod`) silinir; bu 4 satir karisim motorundan bagimsizdir.
-4. **4. Isitici / DX Sogutucu Kademeleri** – kademe sayisi girilir (0 = Yok):
+4. **4. Kademe Sayilari (Isitici / DX / Nemlendirici)** – kademe sayisi girilir (0 = Yok):
    - `DX sogutucu kademe sayisi` 0-10: DxN Alarm + DXN Defrost satirlari sayiya
      gore silinir. `DX_mode`, `DX_Status1`, `CapValuee`, `CapValuee1` genel
      satirlari kademe >= 1 ise kalir.
    - `Elektrikli isitici` ve `On elektrikli isitici` kademe sayisi 0-3:
      `Heater1/2/3_ok` sayiya gore silinir; `HeaterStage` + `HighTempAlarm`
      kademe >= 1 ise kalir.
+   - `Nemlendirici kademe sayisi` 0-8 (**varsayilan 0**): sayinin ustundeki
+     kademelerin `HumModeSelN.Start`, `HumModeSelN.ManPosBMS`,
+     `HumModeSelN.ModeSelBMS`, `Hum_RunStsN` ve `Hum_AlarmN` satirlari silinir
+     (her kademe 5 satir). Ornegin 2 secilirse icinde 3-8 gecen satirlar gider.
+     Sayi 0 ise `Hum_Mod_Sel` blogunun 53 satirinin tamami silinir; sayi >= 1
+     ise `NumberOf_Hum`, `SaturTemp`, `CalHumSet`, `HUM_Set_bms`,
+     `Sup_HUM_Max/Min_bms`, `DB_HUM_SET_bms`, `HUMContTypeSel_bms`,
+     `Humectation ON`, `DeHumectation on`, `HumSet_Abs`, `Room_Abs`, `RoomHumSel`
+     genel satirlari da listeye girer.
 5. **5. SAF / EAF ve Basincl Sensoru** – blok kullanimi tik kutusu ile secilir:
    - `SAF (ufleme fan kontrol blogu)` 21 satir + ayri `QBM97xx basincl transmitteri`
      (5 satir) tiki.
@@ -97,7 +106,9 @@ Islem Kaydi alaninin tekerlegi kendi metnini kaydirir.
   varligina baglidir: by-pass 0 ise "Damper parametreleri - By-pass damper motoru
   secilmedi" olarak silinir.
 - Isitici/DX kademelerinde secilen kademe sayisini asan satirlar silinir;
-  kademe 0 ise grubun genel satirlari da silinir.
+  kademe 0 ise grubun genel satirlari da silinir. Nemlendiricide ayni kural
+  sayiya gore isler: 2 secilirse 3-8 kademelerinin 30 satiri, 0 secilirse
+  `Hum_Mod_Sel` blogunun 53 satirinin tamamı silinir.
 - Blok tiklari (SAF / EAF / RunAround) kaldirilirsa o blogun tum satirlari silinir;
   blok secili degilse transmitter tiki tek basina hicbir satir geri getirmez.
 - Pop-up'ta tik kaldirilan filtre alarmi satiri silinir; `Alarm_Reset` her zaman
@@ -196,6 +207,21 @@ Toplam **19 alarm satiri/protokol**. Ayrica:
 Toplam **13 satir/protokol**. `CV2` su an sadece geri bildirim satirina sahip
 (standart listede `CV2ModeSel` / `CV2_Man_Ref` / `CV_Pos2` yok); bu satirlar
 standart listeye eklendiginde 2. vana kutusunda otomatik gorunur.
+
+## Kademe gruplari (standart listeden otomatik)
+
+| Obje | Etiket | Max kademe | Kademe basina satir | Genel satir | Varsayilan |
+|---|---|---|---|---|---|
+| `DXControl` | DX sogutucu kademe sayısı | 10 | 2 (`DxNAlarm`, `DXNDefrost`) | 4 | 10 |
+| `ElectricalHeater` | Elektrikli ısıtıcı kademe sayısı | 3 | 1 (`HeaterN_ok`) | 2 | 3 |
+| `PreElectricalHeater` | Ön elektrikli ısıtıcı kademe sayısı | 3 | 1 (`HeaterN_ok`) | 2 | 3 |
+| `Hum_Mod_Sel` | Nemlendirici kademe sayısı | 8 | 5 (`HumModeSelN.Start`, `.ManPosBMS`, `.ModeSelBMS`, `Hum_RunStsN`, `Hum_AlarmN`) | 13 | **0** |
+
+Nemlendirici bloku toplam **53 satir/protokol** (8 kademe x 5 + 13 genel).
+Kademe sayisini asan indeksli satirlar "Nemlendirici kademe sayısı #N", sayi 0
+iken genel satirlar "Nemlendirici kademe sayısı - genel satirlar" basligiyla
+silinir. Standart listeye `Hum_Mod_Sel\HumModeSel9.Start` gibi yeni bir kademe
+satiri eklersen 9. kademe kutuda kendiliginden belirir.
 
 ## Rotor modu (standart listeden otomatik)
 

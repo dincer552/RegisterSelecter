@@ -34,6 +34,7 @@ from register_engine import (
     list_sensor_groups,
     list_stage_groups,
     list_valve_groups,
+    stage_default,
 )
 from version import __version__
 
@@ -368,9 +369,9 @@ class App(tk.Tk):
             selection[group.key] = min(max(value, 1), group.max_units)
         return selection
 
-    # ---------- section 4: kademeli gruplar (isitici / DX) ----------
+    # ---------- section 4: kademeli gruplar (isitici / DX / nemlendirici) ----------
     def _build_stage_section(self, parent) -> None:
-        sec = tk.LabelFrame(parent, text=" 4. Isitici / DX Sogutucu Kademeleri ", bg="white", font=("Segoe UI", 11, "bold"), labelanchor="nw")
+        sec = tk.LabelFrame(parent, text=" 4. Kademe Sayilari (Isitici / DX / Nemlendirici) ", bg="white", font=("Segoe UI", 11, "bold"), labelanchor="nw")
         sec.pack(fill="x", padx=2, pady=6)
 
         self.stage_vars: dict[str, tk.StringVar] = {}
@@ -384,15 +385,16 @@ class App(tk.Tk):
         tk.Label(
             sec,
             text="Kademe sayisi 0 ise o grubun tum satirlari silinir. Kademe sayisini asan "
-            "DxAlarm/DXDefrost ve HeaterN_ok satirlari silinir; mod/durum/kapasite/yuksek sicaklik "
-            "alarm satirlari en az bir kademe seciliyse kalir.",
+            "DxAlarm/DXDefrost, HeaterN_ok ve nemlendirici satirlari (HumModeSelN.Start/ManPosBMS/"
+            "ModeSelBMS, Hum_RunStsN, Hum_AlarmN) silinir; mod/durum/kapasite/yuksek sicaklik alarm "
+            "ve nem set ayar satirlari en az bir kademe seciliyse kalir. Nemlendirici varsayilan 0'dir.",
             bg="white", fg="#4b5563", font=("Segoe UI", 9), wraplength=760, justify="left", anchor="w",
         ).pack(fill="x", padx=10, pady=(6, 2))
 
         grid = tk.Frame(sec, bg="white")
         grid.pack(fill="x", padx=10, pady=(4, 10))
         for index, group in enumerate(self.stage_groups, start=1):
-            count = tk.StringVar(value=str(group.max_stages))
+            count = tk.StringVar(value=str(stage_default(group)))
             tk.Label(grid, text=group.label, bg="white", font=("Segoe UI", 10)).grid(row=index, column=0, sticky="w", padx=4, pady=2)
             tk.Spinbox(
                 grid, values=[str(i) for i in range(0, group.max_stages + 1)], textvariable=count,
@@ -405,7 +407,7 @@ class App(tk.Tk):
         selection: dict[str, int] = {}
         for group in self.stage_groups:
             raw = self.stage_vars[group.obj].get()
-            value = int(raw) if raw.isdigit() else group.max_stages
+            value = int(raw) if raw.isdigit() else stage_default(group)
             selection[group.obj] = min(max(value, 0), group.max_stages)
         return selection
 

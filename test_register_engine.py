@@ -23,6 +23,7 @@ from register_engine import (
     list_filter_alarms,
     list_sensor_groups,
     list_stage_groups,
+    stage_default,
     list_valve_groups,
     parse_object_token,
 )
@@ -543,10 +544,14 @@ def test_generate_with_damper_selection(tmp_path):
         assert "MixDmpMB_Siemens" not in names
 
 
-# ---------- isitici / DX kademe secimi ----------
+# ---------- isitici / DX / nemlendirici kademe secimi ----------
 
-# DXControl 24 + ElectricalHeater 5 + PreElectricalHeater 5
-EXPECTED_TOTAL_STAGE_ROWS = 34
+# DXControl 24 + ElectricalHeater 5 + PreElectricalHeater 5 + Hum_Mod_Sel 53
+EXPECTED_TOTAL_STAGE_ROWS = 87
+# Nemlendirici: 8 kademe x 5 satir (Start, RunSts, ManPosBMS, ModeSelBMS, Alarm) + 13 genel
+EXPECTED_HUM_ROWS_PER_STAGE = 5
+EXPECTED_TOTAL_HUM_ROWS = 53
+HUM_GROUP = "Nemlendirici kademe sayısı"
 
 
 @pytest.mark.parametrize("protocol", ["modbus", "bacnet"])
@@ -560,15 +565,21 @@ def test_detect_stage_groups(protocol):
     assert set(groups["ElectricalHeater"].general_tokens) == {"HeaterStage", "HighTempAlarm"}
     assert groups["PreElectricalHeater"].max_stages == 3
     assert "PreHighTempAlarm" in groups["PreElectricalHeater"].general_tokens
+    assert groups["Hum_Mod_Sel"].max_stages == 8
+    assert len(groups["Hum_Mod_Sel"].general_tokens) == 13
     # DX: 10 kademe x 2 satir + 4 genel = 24 ; isiticilar: 3 kademe + 2 genel = 5
-    row_counts = {"DXControl": 24, "ElectricalHeater": 5, "PreElectricalHeater": 5}
+    row_counts = {"DXControl": 24, "ElectricalHeater": 5, "PreElectricalHeater": 5, "Hum_Mod_Sel": 53}
     assert sum(row_counts[g.obj] for g in groups.values()) == EXPECTED_TOTAL_STAGE_ROWS
 
 
 def test_list_stage_groups_labels():
     groups = {g.obj: g for g in list_stage_groups(DATA_DIR)}
-    assert list(groups) == ["DXControl", "ElectricalHeater", "PreElectricalHeater"]
+    assert list(groups) == ["DXControl", "ElectricalHeater", "PreElectricalHeater", "Hum_Mod_Sel"]
     assert groups["DXControl"].label == "DX soğutucu kademe sayısı"
+    assert groups["Hum_Mod_Sel"].label == HUM_GROUP
+    # nemlendirici varsayilan olarak secilmez, diger gruplar tam listede kalir
+    assert stage_default(groups["Hum_Mod_Sel"]) == 0
+    assert stage_default(groups["DXControl"]) == groups["DXControl"].max_stages
 
 
 def test_stage_full_selection_keeps_rows(tmp_path):
@@ -584,7 +595,7 @@ def test_stage_zero_selection_removes_all(tmp_path):
     assert res.kept_stage_rows == 0
     assert res.removed_rows == FAN_BASELINE_REMOVED + EXPECTED_TOTAL_STAGE_ROWS
     names = _names(res, "bacnet")
-    for token in ("DXControl", "ElectricalHeater", "PreElectricalHeater"):
+    for token in ("DXControl", "ElectricalHeater", "PreElectricalHeater", "Hum_Mod_Sel"):
         assert token not in names
 
 
@@ -612,6 +623,65 @@ def test_stage_selection_does_not_touch_sensors(tmp_path):
     names = _names(res, "modbus")
     assert r"SupplyAirSensorMB\TmpVal" in names
     assert r"SupDmpMB_Siemens\Dmp_Pos" in names
+
+
+# ---------- nemlendirici kademe sayimi ----------
+
+def _hum_stage_run(tmp_path, protocol, count):
+    """Nemlendirici kademesi `count`, diger kademeler tam secili calistirir."""
+    stages = {g.obj: g.max_stages for g in list_stage_groups(DATA_DIR)}
+    stages["Hum_Mod_Sel"] = count
+    return _sensor_run(tmp_path, protocol, None, stage_selection=stages, out_name=f"hum_{count}.xlsx")
+
+
+@pytest.mark.parametrize("protocol", ["modbus", "bacnet"])
+def test_humidifier_zero_removes_whole_block(tmp_path, protocol):
+    res = _hum_stage_run(tmp_path, protocol, 0)
+    assert res.total_stage_rows == EXPECTED_TOTAL_STAGE_ROWS
+    hum_removed = sum(v for k, v in res.removed_by_group.items() if k.startswith(HUM_GROUP))
+    assert hum_removed == EXPECTED_TOTAL_HUM_ROWS
+    assert "Hum_Mod_Sel" not in _names(res, protocol)
+
+
+@pytest.mark.parametrize("protocol", ["modbus", "bacnet"])
+def test_humidifier_partial_count_removes_higher_stages(tmp_path, protocol):
+    res = _hum_stage_run(tmp_path, protocol, 2)
+    names = _names(res, protocol)
+    for token in (
+        r"Hum_Mod_Sel\HumModeSel1.Start",
+        r"Hum_Mod_Sel\Hum_RunSts2",
+        r"Hum_Mod_Sel\HumModeSel2.ManPosBMS",
+        r"Hum_Mod_Sel\HumModeSel1.ModeSelBMS",
+        r"Hum_Mod_Sel\Hum_Alarm2",
+        r"Hum_Mod_Sel\NumberOf_Hum",
+        r"Hum_Mod_Sel\HUM_Set_bms",
+    ):
+        assert token in names
+    for token in (
+        r"Hum_Mod_Sel\HumModeSel3.ManPosBMS",
+        r"Hum_Mod_Sel\HumModeSel3.ModeSelBMS",
+        r"Hum_Mod_Sel\Hum_RunSts4",
+        r"Hum_Mod_Sel\Hum_Alarm8",
+    ):
+        assert token not in names
+    assert res.removed_by_group[f"{HUM_GROUP} #3"] == EXPECTED_HUM_ROWS_PER_STAGE
+    assert res.removed_by_group[f"{HUM_GROUP} #8"] == EXPECTED_HUM_ROWS_PER_STAGE
+    assert f"{HUM_GROUP} - genel satirlar" not in res.removed_by_group
+
+
+@pytest.mark.parametrize("protocol", ["modbus", "bacnet"])
+def test_humidifier_full_count_keeps_every_row(tmp_path, protocol):
+    res = _hum_stage_run(tmp_path, protocol, 8)
+    assert not [k for k in res.removed_by_group if k.startswith(HUM_GROUP)]
+    names = _names(res, protocol)
+    assert r"Hum_Mod_Sel\HumModeSel8.Start" in names
+    assert r"Hum_Mod_Sel\RoomHumSel" in names
+
+
+def test_humidifier_stage_selection_unused_keeps_rows(tmp_path):
+    res = _sensor_run(tmp_path, "modbus", None, out_name="nohum.xlsx")
+    assert r"Hum_Mod_Sel\HumModeSel8.Start" in _names(res, "modbus")
+
 
 
 # ---------- SAF / EAF / RunAround blok secimi ----------
