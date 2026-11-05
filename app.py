@@ -27,6 +27,7 @@ from version import __version__
 
 APP_TITLE = "REGISTER SELECTER"
 CHECK_INTERVAL_MS = 60_000
+WHEEL_NOTCH_ROWS = 3
 
 BG = "#f4f6f8"
 HEADER_BG = "#1f2a37"
@@ -68,8 +69,12 @@ class ScrollFrame(tk.Frame):
         bar.pack(side="right", fill="y")
         self.inner.bind("<Configure>", lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
         self.canvas.bind("<Configure>", lambda e: self.canvas.itemconfigure(self.inner_id, width=e.width))
-        self.canvas.bind("<MouseWheel>", lambda e: self.canvas.yview_scroll(int(-e.delta / 120), "units"))
-        self.inner.bind("<MouseWheel>", lambda e: self.canvas.yview_scroll(int(-e.delta / 120), "units"))
+
+    def wheel_scroll(self, delta: int) -> None:
+        """Tekerlek tekerlegi kadar kaydirir (App.bind_all cagirisindan gelir)."""
+        if delta == 0:
+            return
+        self.canvas.yview_scroll((-1 if delta > 0 else 1) * WHEEL_NOTCH_ROWS, "units")
 
 
 class App(tk.Tk):
@@ -91,6 +96,10 @@ class App(tk.Tk):
         self._build_header()
         self.scroll = ScrollFrame(self)
         self.scroll.pack(fill="both", expand=True, padx=16, pady=8)
+        self.bind_all("<MouseWheel>", self._on_mousewheel)
+        # spinbox/combobox uzerinde tekerlek degeri degistirmesin, sayfayi kaydirdirsin
+        for cls in ("Spinbox", "TCombobox"):
+            self.bind_class(cls, "<MouseWheel>", lambda e: (self._on_mousewheel(e), "break")[1])
         body = self.scroll.inner
         self._build_sensor_section(body)
         self._build_fan_section(body)
@@ -101,6 +110,12 @@ class App(tk.Tk):
         self._load_config()
 
         self.after(3000, self._auto_check)
+
+    # ---------- mouse wheel ----------
+    def _on_mousewheel(self, event) -> None:
+        if getattr(event.widget, "winfo_class", lambda: "")() == "Text":
+            return  # islem kaydi kendi icerigini kaydirir
+        self.scroll.wheel_scroll(event.delta)
 
     # ---------- header ----------
     def _build_header(self) -> None:

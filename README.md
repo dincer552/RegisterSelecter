@@ -40,6 +40,11 @@ cihaza özel Excel listeleri üreten Windows masaüstü programi.
 
 Cikti: `AHU-01_Modbus_Reg_List.xlsx` ve `AHU-01_BACnet_Reg_List.xlsx`
 
+Bolumler **fare tekerlegi** ile kaydirilir; imlec bir etiketin/tik kutusunun
+uzerindeyken de calisir. Tekerlek spinbox veya marka kutusunun uzerindeyken
+**degeri degistirmez**, yine sayfayi kaydirdir (yanlislikla secim bozmamak icin).
+Islem Kaydi alaninin tekerlegi kendi metnini kaydirir.
+
 ## Ne silinir, ne kalir
 
 - Secilmeyen marka bloklari ve secilen adetten fazla ünitelerin satirlari
