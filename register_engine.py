@@ -132,16 +132,25 @@ class DamperGroup:
 
 # DamperCont\... parametre satirlari bir damper tarafinin varligina baglidir:
 # ilgili tarafin motor sayisi 0 ise bu satirlar listeden silinir.
+DAMPER_PARAM_OBJECT = "DamperCont"
 DAMPER_PARAM_TOKENS: dict[str, str] = {
     "DmpAutoManSel_BMS": "Mix",
     "DmpMinRef_BMS": "Mix",
     "DmpManRef_BMS": "Mix",
+    "CO2_Set_BMS": "Mix",
+    "DmpContTypeSel": "Mix",
 }
+# Bu iki satir karisim motorunun yaninda en az bir CO2 sensoru secilmesini de ister.
+DAMPER_PARAM_CO2_TOKENS = frozenset({"CO2_Set_BMS", "DmpContTypeSel"})
 DAMPER_PARAM_GROUP_PREFIX = "Damper parametreleri - "
 
 
 def _damper_side_used(damper_selection: dict[str, int], side: str) -> bool:
     return any(int(count) > 0 for key, count in damper_selection.items() if key.split("|", 1)[0] == side)
+
+
+def _co2_sensor_selected(sensor_selection: dict[str, list[str]]) -> bool:
+    return any("co2" in codes for codes in sensor_selection.values())
 
 
 # Kademeli gruplar (DX sogutucu, elektrikli isiticilar). Kademe tokenlari
@@ -776,10 +785,19 @@ def filter_standard_list(
                 kept_valve_rows += 1
                 continue
             group = f"{VALVE_GROUP_PREFIX}{valve_labels.get(valve_key, valve_key)}"
-        elif damper_selection is not None and (side := DAMPER_PARAM_TOKENS.get(parsed_tok or "")):
-            if _damper_side_used(damper_selection, side):
+        elif damper_selection is not None and parsed_obj == DAMPER_PARAM_OBJECT and (
+            side := DAMPER_PARAM_TOKENS.get(parsed_tok or "")
+        ):
+            if not _damper_side_used(damper_selection, side):
+                group = f"{DAMPER_PARAM_GROUP_PREFIX}{SIDE_LABELS[side]} secilmedi"
+            elif (
+                parsed_tok in DAMPER_PARAM_CO2_TOKENS
+                and sensor_selection is not None
+                and not _co2_sensor_selected(sensor_selection)
+            ):
+                group = f"{DAMPER_PARAM_GROUP_PREFIX}CO2 sensoru secilmedi"
+            else:
                 continue
-            group = f"{DAMPER_PARAM_GROUP_PREFIX}{SIDE_LABELS[side]} secilmedi"
         elif parsed_obj in ALWAYS_DROPPED_OBJECTS:
             group = f"{ALWAYS_DROPPED_OBJECTS[parsed_obj]} - kullanilmiyor"
         elif parsed_obj in ALWAYS_KEPT_OBJECTS:

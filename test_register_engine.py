@@ -325,6 +325,10 @@ DAMPER_SIDES = {"Sup", "Fresh", "Return", "Ext", "Mix", "ByPass"}
 EXPECTED_DMP_PARAM_ROWS = 3
 DMP_PARAM_GROUP = "Damper parametreleri - Karışım hava damper motoru secilmedi"
 DMP_PARAM_TOKENS = (r"DamperCont\DmpAutoManSel_BMS", r"DamperCont\DmpMinRef_BMS", r"DamperCont\DmpManRef_BMS")
+# CO2 sensoru de isteyen iki satir
+EXPECTED_DMP_CO2_ROWS = 2
+DMP_CO2_GROUP = "Damper parametreleri - CO2 sensoru secilmedi"
+DMP_CO2_TOKENS = (r"DamperCont\CO2_Set_BMS", r"DamperCont\DmpContTypeSel")
 
 
 @pytest.mark.parametrize(
@@ -375,16 +379,16 @@ def test_damper_full_selection_removes_nothing_extra(tmp_path):
 def test_damper_zero_selection_removes_whole_block(tmp_path):
     res = _sensor_run(tmp_path, "modbus", None, damper_selection={}, out_name="none.xlsx")
     assert res.kept_damper_rows == 0
-    assert res.removed_rows == FAN_BASELINE_REMOVED + EXPECTED_TOTAL_DAMPER_ROWS + EXPECTED_DMP_PARAM_ROWS
+    assert res.removed_rows == (
+        FAN_BASELINE_REMOVED + EXPECTED_TOTAL_DAMPER_ROWS + EXPECTED_DMP_PARAM_ROWS + EXPECTED_DMP_CO2_ROWS
+    )
     names = _names(res, "modbus")
     assert "DmpMB_Siemens" not in names
-    # karisim motoru 0 -> auto/manuel secim + referans satirlari da silinir
-    for token in DMP_PARAM_TOKENS:
+    # karisim motoru 0 -> 5 DamperCont parametre satirinin hepsi silinir
+    for token in DMP_PARAM_TOKENS + DMP_CO2_TOKENS:
         assert token not in names
-    assert res.removed_by_group[DMP_PARAM_GROUP] == EXPECTED_DMP_PARAM_ROWS
-    # damper kontrol/parametre satirlari (DamperCont, BypassDmpCont) sabit kalir
-    assert r"DamperCont\DmpContTypeSel" in names
-    assert r"DamperCont\CO2_Set_BMS" in names
+    assert res.removed_by_group[DMP_PARAM_GROUP] == EXPECTED_DMP_PARAM_ROWS + EXPECTED_DMP_CO2_ROWS
+    # BypassDmpCont satirlari karisim damperinden bagimsiz, her zaman kalir
     assert r"BypassDmpCont\BypassRecMod" in names
 
 
@@ -407,27 +411,53 @@ def test_damper_unit_counts_per_side(tmp_path):
 
 @pytest.mark.parametrize("protocol", ["modbus", "bacnet"])
 def test_damper_param_rows_follow_mix_count(tmp_path, protocol):
-    """Karisim motoru >= 1 ise DamperCont auto/man secim + referans satirlari kalir, 0 ise silinir."""
+    """Karisim motoru >= 1 ise DamperCont parametre satirlari kalir, 0 ise hepsi silinir."""
     kept = _sensor_run(tmp_path, protocol, None, damper_selection={"Mix|Siemens": 1},
                        out_name=f"mix1_{protocol}.xlsx")
     names = _names(kept, protocol)
-    for token in DMP_PARAM_TOKENS:
+    for token in DMP_PARAM_TOKENS + DMP_CO2_TOKENS:
         assert token in names
     assert DMP_PARAM_GROUP not in kept.removed_by_group
 
     dropped = _sensor_run(tmp_path, protocol, None, damper_selection={"Mix|Siemens": 0},
                           out_name=f"mix0_{protocol}.xlsx")
     names = _names(dropped, protocol)
-    for token in DMP_PARAM_TOKENS:
+    for token in DMP_PARAM_TOKENS + DMP_CO2_TOKENS:
         assert token not in names
-    assert dropped.removed_by_group[DMP_PARAM_GROUP] == EXPECTED_DMP_PARAM_ROWS
+    assert dropped.removed_by_group[DMP_PARAM_GROUP] == EXPECTED_DMP_PARAM_ROWS + EXPECTED_DMP_CO2_ROWS
+
+
+@pytest.mark.parametrize("protocol", ["modbus", "bacnet"])
+def test_damper_co2_param_rows_need_co2_sensor(tmp_path, protocol):
+    """CO2_Set_BMS ve DmpContTypeSel karisim motoru + en az bir CO2 sensoru ister."""
+    all_sensors = {g.obj: [c for c, _ in g.signals] for g in list_sensor_groups(DATA_DIR)}
+    assert any("co2" in codes for codes in all_sensors.values())
+    mix_only = {"Mix|Siemens": 1}
+
+    with_co2 = _sensor_run(tmp_path, protocol, all_sensors, damper_selection=mix_only,
+                           out_name=f"co2on_{protocol}.xlsx")
+    names = _names(with_co2, protocol)
+    for token in DMP_PARAM_TOKENS + DMP_CO2_TOKENS:
+        assert token in names
+    assert DMP_CO2_GROUP not in with_co2.removed_by_group
+
+    no_co2 = {obj: [c for c in codes if c != "co2"] for obj, codes in all_sensors.items()}
+    without_co2 = _sensor_run(tmp_path, protocol, no_co2, damper_selection=mix_only,
+                              out_name=f"co2off_{protocol}.xlsx")
+    names = _names(without_co2, protocol)
+    for token in DMP_CO2_TOKENS:
+        assert token not in names
+    for token in DMP_PARAM_TOKENS:  # bunlar yalnizca karisim motoruna bagli
+        assert token in names
+    assert without_co2.removed_by_group[DMP_CO2_GROUP] == EXPECTED_DMP_CO2_ROWS
+    assert DMP_PARAM_GROUP not in without_co2.removed_by_group
 
 
 def test_damper_param_rows_untouched_without_damper_step(tmp_path):
     """Damper adimi hic kullanilmazsa (selection None) davranis degismez."""
     res = _sensor_run(tmp_path, "modbus", None)
     names = _names(res, "modbus")
-    for token in DMP_PARAM_TOKENS:
+    for token in DMP_PARAM_TOKENS + DMP_CO2_TOKENS:
         assert token in names
     assert DMP_PARAM_GROUP not in res.removed_by_group
 
