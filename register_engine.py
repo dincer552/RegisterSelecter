@@ -53,6 +53,7 @@ PROTOCOLS: dict[str, dict] = {
         "label": "MODBUS",
         "file": "Standart_Modbus_Reg_List.xlsx",
         "name_col": "B",
+        "label_col": "E",
         "header_row": 4,
         "out_suffix": "Modbus_Reg_List",
     },
@@ -60,6 +61,7 @@ PROTOCOLS: dict[str, dict] = {
         "label": "BACNET",
         "file": "Standart_BACnet_List.xlsx",
         "name_col": "A",
+        "label_col": "D",
         "header_row": 5,
         "out_suffix": "BACnet_Reg_List",
     },
@@ -304,6 +306,51 @@ def list_feature_groups(data_dir: Path) -> list[FeatureGroup]:
     return [merged[obj] for obj in FEATURE_GROUPS if obj in merged]
 
 
+# Filtre kirlilik alarmlari: "Alarm\<Token>" satirlari, tek tek secilir.
+FILTER_ALARM_OBJECT = "Alarm"
+ALARM_GROUP_PREFIX = "Filtre alarmi - "
+# Hicbir cihazda kullanilmayan gruplar her zaman listeden cikarilir.
+ALWAYS_DROPPED_OBJECTS = {"TempAVG": "TempAVG (ortalama oda sicakligi)"}
+# Sabit kalmasi gereken satirlar (sensor dalgina takilmamasi icin acikca tutulur).
+ALWAYS_KEPT_OBJECTS = {"Alarm_Reset"}
+
+
+@dataclass
+class FilterAlarm:
+    token: str
+    label: str
+
+
+def _alarm_label(raw_label: str | None, token: str) -> str:
+    text = str(raw_label or "").strip()
+    if text and "\\" not in text and text.lower() != token.lower():
+        return text
+    humanized = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", token)
+    return re.sub(r"Alm$", "Alarm", humanized)
+
+
+def detect_filter_alarms(ws, name_col: str, label_col: str, header_row: int) -> list[FilterAlarm]:
+    alarms: dict[str, FilterAlarm] = {}
+    for row in range(header_row + 1, ws.max_row + 1):
+        obj, tok = parse_object_token(ws[f"{name_col}{row}"].value)
+        if obj != FILTER_ALARM_OBJECT or not tok:
+            continue
+        alarms.setdefault(tok, FilterAlarm(token=tok, label=_alarm_label(ws[f"{label_col}{row}"].value, tok)))
+    return list(alarms.values())
+
+
+def list_filter_alarms(data_dir: Path) -> list[FilterAlarm]:
+    """Iki protokoldeki filtre alarm satirlarinin birlesimi (etiket olarak en okunani)."""
+    merged: dict[str, FilterAlarm] = {}
+    for cfg in PROTOCOLS.values():
+        ws = load_workbook(data_dir / cfg["file"]).active
+        for alarm in detect_filter_alarms(ws, cfg["name_col"], cfg["label_col"], cfg["header_row"]):
+            cur = merged.get(alarm.token)
+            if cur is None or "\\" in cur.label:
+                merged[alarm.token] = alarm
+    return sorted(merged.values(), key=lambda a: a.label.lower())
+
+
 def classify_damper(name_cell: str | None) -> tuple[str, int] | None:
     """Damper motoru satiriyse (grup anahtari, unite numarasi) dondurur."""
     obj, _tok = parse_object_token(name_cell)
@@ -465,6 +512,8 @@ class FilterResult:
     total_stage_rows: int = 0
     kept_feature_rows: int = 0
     total_feature_rows: int = 0
+    kept_alarm_rows: int = 0
+    total_alarm_rows: int = 0
     removed_by_group: dict[str, int] = field(default_factory=dict)
 
 
@@ -527,6 +576,7 @@ def filter_standard_list(
     damper_selection: dict[str, int] | None = None,
     stage_selection: dict[str, int] | None = None,
     feature_selection: dict[str, list[str]] | None = None,
+    alarm_selection: list[str] | None = None,
 ) -> FilterResult:
     cfg = PROTOCOLS[protocol]
     selections = {
@@ -554,6 +604,14 @@ def filter_standard_list(
     feature_enabled = feature_selection is not None
     chosen_features = feature_selection or {}
 
+    alarm_enabled = alarm_selection is not None
+    chosen_alarms = set(alarm_selection or [])
+    alarm_labels: dict[str, str] = {}
+    if alarm_enabled:
+        alarm_labels = {
+            a.token: a.label for a in detect_filter_alarms(ws, name_col, cfg["label_col"], cfg["header_row"])
+        }
+
     removed: list[int] = []
     removed_by_group: dict[str, int] = {}
     kept_fan_rows = 0
@@ -564,6 +622,8 @@ def filter_standard_list(
     total_stage_rows = 0
     kept_feature_rows = 0
     total_feature_rows = 0
+    kept_alarm_rows = 0
+    total_alarm_rows = 0
 
     for row in range(first_data_row, ws.max_row + 1):
         value = ws[f"{name_col}{row}"].value
@@ -614,6 +674,16 @@ def filter_standard_list(
             if keep:
                 kept_feature_rows += 1
                 continue
+        elif parsed_obj in ALWAYS_DROPPED_OBJECTS:
+            group = f"{ALWAYS_DROPPED_OBJECTS[parsed_obj]} - kullanilmiyor"
+        elif parsed_obj in ALWAYS_KEPT_OBJECTS:
+            continue  # Alarm_Reset her zaman listeye eklenir
+        elif alarm_enabled and parsed_obj == FILTER_ALARM_OBJECT:
+            total_alarm_rows += 1
+            if parsed_tok in chosen_alarms:
+                kept_alarm_rows += 1
+                continue
+            group = f"{ALARM_GROUP_PREFIX}{alarm_labels.get(parsed_tok or '', parsed_tok or '')}"
         elif registered:
             obj, tok = parse_object_token(value)
             group_obj = registered.get(obj) if obj else None
@@ -654,6 +724,8 @@ def filter_standard_list(
         total_stage_rows=total_stage_rows,
         kept_feature_rows=kept_feature_rows,
         total_feature_rows=total_feature_rows,
+        kept_alarm_rows=kept_alarm_rows,
+        total_alarm_rows=total_alarm_rows,
         removed_by_group=removed_by_group,
     )
     return result
@@ -675,6 +747,7 @@ def generate(
     damper_selection: dict[str, int] | None = None,
     stage_selection: dict[str, int] | None = None,
     feature_selection: dict[str, list[str]] | None = None,
+    alarm_selection: list[str] | None = None,
 ) -> list[FilterResult]:
     prefix = device_prefix.strip() or "Cihaz"
     results: list[FilterResult] = []
@@ -693,6 +766,7 @@ def generate(
                 damper_selection=damper_selection,
                 stage_selection=stage_selection,
                 feature_selection=feature_selection,
+                alarm_selection=alarm_selection,
             )
         )
     return results

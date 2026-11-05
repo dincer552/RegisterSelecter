@@ -10,12 +10,14 @@ from register_engine import (
     classify_damper,
     classify_row,
     detect_damper_groups,
+    detect_filter_alarms,
     detect_sensor_groups,
     detect_stage_groups,
     filter_standard_list,
     generate,
     list_damper_groups,
     list_feature_groups,
+    list_filter_alarms,
     list_sensor_groups,
     list_stage_groups,
     parse_object_token,
@@ -27,6 +29,10 @@ BACNET = DATA_DIR / PROTOCOLS["bacnet"]["file"]
 
 # Veriden dogrulanan toplam fan satiri sayisi (her protokolde).
 EXPECTED_TOTAL_FAN_ROWS = 216
+# TempAVG (ortalama oda sicakligi) bloge register listesine HIC eklenmez.
+EXPECTED_TOTAL_TEMPAVG_ROWS = 5
+# EBM 4+4 secildiginde listede kalan tek "silinmeyen" sayilari bu temele gore okunur.
+FAN_BASELINE_REMOVED = EXPECTED_TOTAL_FAN_ROWS - 64 + EXPECTED_TOTAL_TEMPAVG_ROWS
 
 
 @pytest.mark.parametrize(
@@ -66,7 +72,9 @@ def test_full_selection_keeps_everything(standard, out_name, tmp_path):
     )
     assert res.total_fan_rows == EXPECTED_TOTAL_FAN_ROWS
     assert res.kept_fan_rows == 64  # 4+4 EBM unites x 8 satir
-    assert res.removed_rows == EXPECTED_TOTAL_FAN_ROWS - 64
+    # fan disinda yalnizca TempAVG bloge kalici olarak silinir
+    assert res.removed_rows == FAN_BASELINE_REMOVED
+    assert res.removed_by_group["TempAVG (ortalama oda sicakligi) - kullanilmiyor"] == EXPECTED_TOTAL_TEMPAVG_ROWS
 
 
 def test_ebm_supply_2_exhaust_1(tmp_path):
@@ -80,7 +88,7 @@ def test_ebm_supply_2_exhaust_1(tmp_path):
         exhaust_count=1,
     )
     assert res.kept_fan_rows == 16 + 8  # 2 supply + 1 exhaust unite
-    assert res.removed_rows == EXPECTED_TOTAL_FAN_ROWS - 24
+    assert res.removed_rows == EXPECTED_TOTAL_FAN_ROWS - 24 + EXPECTED_TOTAL_TEMPAVG_ROWS
 
     wb = load_workbook(res.output)
     ws = wb.active
@@ -247,8 +255,8 @@ def test_sensor_selection_keeps_fan_baseline_when_all_checked(tmp_path):
     groups = {g.obj: [c for c, _ in g.signals] for g in list_sensor_groups(DATA_DIR)}
     res = _sensor_run(tmp_path, "modbus", groups)
     assert res.kept_fan_rows == 64
-    assert res.removed_rows == EXPECTED_TOTAL_FAN_ROWS - 64
-    # hicbir sensör satiri silinmemeli (silinen gruplar yalnizca fan bloklari)
+    assert res.removed_rows == FAN_BASELINE_REMOVED
+    # hicbir sensör satiri silinmemeli (silinen gruplar yalnizca fan bloklari + TempAVG)
     assert not [k for k in res.removed_by_group if "Sens" in k]
     names = _names(res, "modbus")
     assert r"SupplyAirSensorMB\AbsHum" in names
@@ -279,10 +287,11 @@ def test_sensor_removed_row_count_matches_selection(tmp_path):
     total_sensor_rows = 50
     assert res.removed_rows - baseline.removed_rows == total_sensor_rows
     assert "Room Temp" not in _names(res, "modbus")
-    # sabit satirlar (BMS/ort. sicaklik/nem modu) her zaman kalir
+    # sabit satirlar (BMS sicaklik / nem modu) her zaman kalir
     assert r"BmsTemp_Hum\RoomTempFromBms" in _names(res, "modbus")
-    assert r"TempAVG\Room_TempAVG" in _names(res, "modbus")
     assert r"Hum_Mod_Sel\Room_Abs" in _names(res, "modbus")
+    # TempAVG artik hicbir cihazda listeye eklenmez
+    assert r"TempAVG\Room_TempAVG" not in _names(res, "modbus")
 
 
 def test_generate_passes_sensor_selection(tmp_path):
@@ -349,13 +358,13 @@ def test_damper_full_selection_removes_nothing_extra(tmp_path):
     res = _sensor_run(tmp_path, "modbus", None, damper_selection=all_units)
     assert res.total_damper_rows == EXPECTED_TOTAL_DAMPER_ROWS
     assert res.kept_damper_rows == EXPECTED_TOTAL_DAMPER_ROWS
-    assert res.removed_rows == EXPECTED_TOTAL_FAN_ROWS - 64
+    assert res.removed_rows == FAN_BASELINE_REMOVED
 
 
 def test_damper_zero_selection_removes_whole_block(tmp_path):
     res = _sensor_run(tmp_path, "modbus", None, damper_selection={}, out_name="none.xlsx")
     assert res.kept_damper_rows == 0
-    assert res.removed_rows == (EXPECTED_TOTAL_FAN_ROWS - 64) + EXPECTED_TOTAL_DAMPER_ROWS
+    assert res.removed_rows == FAN_BASELINE_REMOVED + EXPECTED_TOTAL_DAMPER_ROWS
     names = _names(res, "modbus")
     assert "DmpMB_Siemens" not in names
     # damper kontrol/parametre satirlari (DamperCont, BypassDmpCont) sabit kalir
@@ -369,7 +378,7 @@ def test_damper_unit_counts_per_side(tmp_path):
     res = _sensor_run(tmp_path, "modbus", None, damper_selection=selection, out_name="mixed.xlsx")
     # taraf basina: 1 pozisyon + N motor x 4 satir
     assert res.kept_damper_rows == (1 + 8) + (1 + 4) + (1 + 16) + 0 + (1 + 12) + (1 + 16)
-    assert res.removed_rows == (EXPECTED_TOTAL_FAN_ROWS - 64) + (EXPECTED_TOTAL_DAMPER_ROWS - res.kept_damper_rows)
+    assert res.removed_rows == FAN_BASELINE_REMOVED + (EXPECTED_TOTAL_DAMPER_ROWS - res.kept_damper_rows)
     names = _names(res, "modbus")
     assert r"SupDmpMB_Siemens1\Dmp_Fdb" in names
     assert r"SupDmpMB_Siemens2\Dmp_Fdb" not in names
@@ -433,13 +442,13 @@ def test_stage_full_selection_keeps_rows(tmp_path):
     res = _sensor_run(tmp_path, "modbus", None, stage_selection=all_stages)
     assert res.total_stage_rows == EXPECTED_TOTAL_STAGE_ROWS
     assert res.kept_stage_rows == EXPECTED_TOTAL_STAGE_ROWS
-    assert res.removed_rows == EXPECTED_TOTAL_FAN_ROWS - 64
+    assert res.removed_rows == FAN_BASELINE_REMOVED
 
 
 def test_stage_zero_selection_removes_all(tmp_path):
     res = _sensor_run(tmp_path, "bacnet", None, stage_selection={}, out_name="ba.xlsx")
     assert res.kept_stage_rows == 0
-    assert res.removed_rows == (EXPECTED_TOTAL_FAN_ROWS - 64) + EXPECTED_TOTAL_STAGE_ROWS
+    assert res.removed_rows == FAN_BASELINE_REMOVED + EXPECTED_TOTAL_STAGE_ROWS
     names = _names(res, "bacnet")
     for token in ("DXControl", "ElectricalHeater", "PreElectricalHeater"):
         assert token not in names
@@ -492,13 +501,13 @@ def test_feature_full_selection(tmp_path):
     res = _sensor_run(tmp_path, "modbus", None, feature_selection=all_opts)
     assert res.total_feature_rows == EXPECTED_TOTAL_FEATURE_ROWS
     assert res.kept_feature_rows == EXPECTED_TOTAL_FEATURE_ROWS
-    assert res.removed_rows == EXPECTED_TOTAL_FAN_ROWS - 64
+    assert res.removed_rows == FAN_BASELINE_REMOVED
 
 
 def test_feature_none_selection_removes_blocks(tmp_path):
     res = _sensor_run(tmp_path, "bacnet", None, feature_selection={}, out_name="ba.xlsx")
     assert res.kept_feature_rows == 0
-    assert res.removed_rows == (EXPECTED_TOTAL_FAN_ROWS - 64) + EXPECTED_TOTAL_FEATURE_ROWS
+    assert res.removed_rows == FAN_BASELINE_REMOVED + EXPECTED_TOTAL_FEATURE_ROWS
     names = _names(res, "bacnet")
     for token in ("SAF\\", "EAF\\", "QBM97xx", "RunAroundCont"):
         assert token not in names
@@ -526,3 +535,70 @@ def test_feature_sub_option_needs_main(tmp_path):
     assert "SAF\\" not in names and "QBM97xx_SAF" not in names
     assert r"EAF\EAF.DuctPress" in names
     assert "RunAroundCont" not in names
+
+
+# ---------- filtre alarmlari (pop-up ile tek tek secim) ----------
+
+EXPECTED_TOTAL_FILTER_ALARM_ROWS = 19
+
+
+@pytest.mark.parametrize("protocol", ["modbus", "bacnet"])
+def test_detect_filter_alarms_labels(protocol):
+    cfg = PROTOCOLS[protocol]
+    ws = load_workbook(DATA_DIR / cfg["file"]).active
+    alarms = detect_filter_alarms(ws, cfg["name_col"], cfg["label_col"], cfg["header_row"])
+    assert len(alarms) == EXPECTED_TOTAL_FILTER_ALARM_ROWS
+    labels = {a.token: a.label for a in alarms}
+    assert labels["FreshM5FilterAlm"] == "Fresh M5 Filter Alarm"
+    # modbus'ta bu satirin etiket sutunu register adiyla ayni; yine de okunur etiket uretilir
+    assert "\\" not in labels["CarbonFilterAlm"]
+    assert all(a.label and "\\" not in a.label for a in alarms)
+
+
+def test_list_filter_alarms_union_is_readable():
+    alarms = list_filter_alarms(DATA_DIR)
+    assert len(alarms) == EXPECTED_TOTAL_FILTER_ALARM_ROWS
+    assert {a.token for a in alarms} == {
+        "CarbonFilterAlm", "HepaFilterAlm", "H13FilterAlm", "NuclearHepaFilterAlm",
+    } | {f"{side}{cls}FilterAlm" for side in ("Fresh", "Return", "Supply") for cls in ("M5", "G4", "F7", "F9", "G2")}
+
+
+def test_filter_alarm_selection_keeps_only_chosen(tmp_path):
+    tokens = [a.token for a in list_filter_alarms(DATA_DIR)]
+    all_res = _sensor_run(tmp_path, "modbus", None, alarm_selection=tokens, out_name="alm_all.xlsx")
+    some_res = _sensor_run(tmp_path, "modbus", None, alarm_selection=["FreshG4FilterAlm", "H13FilterAlm"],
+                           out_name="alm_some.xlsx")
+    none_res = _sensor_run(tmp_path, "modbus", None, alarm_selection=[], out_name="alm_none.xlsx")
+    assert all_res.kept_alarm_rows == EXPECTED_TOTAL_FILTER_ALARM_ROWS
+    assert some_res.kept_alarm_rows == 2
+    assert none_res.kept_alarm_rows == 0
+    assert all_res.total_alarm_rows == some_res.total_alarm_rows == EXPECTED_TOTAL_FILTER_ALARM_ROWS
+
+    names = _names(some_res, "modbus")
+    assert r"Alarm\FreshG4FilterAlm" in names and r"Alarm\H13FilterAlm" in names
+    assert r"Alarm\FreshM5FilterAlm" not in names
+    assert some_res.removed_by_group["Filtre alarmi - Fresh M5 Filter Alarm"] == 1
+    assert none_res.removed_rows - all_res.removed_rows == EXPECTED_TOTAL_FILTER_ALARM_ROWS
+
+
+@pytest.mark.parametrize("protocol", ["modbus", "bacnet"])
+def test_tempavg_group_is_never_included(tmp_path, protocol):
+    tokens = [a.token for a in list_filter_alarms(DATA_DIR)]
+    res = _sensor_run(tmp_path, protocol, None, alarm_selection=tokens, out_name=f"avg_{protocol}.xlsx")
+    names = _names(res, protocol)
+    for token in ("Room1En", "Room2En", "Room3En", "Room4En", "Room_TempAVG"):
+        assert rf"TempAVG\{token}" not in names
+    assert res.removed_by_group["TempAVG (ortalama oda sicakligi) - kullanilmiyor"] == EXPECTED_TOTAL_TEMPAVG_ROWS
+
+
+def test_tempavg_dropped_even_without_alarm_selection(tmp_path):
+    res = _sensor_run(tmp_path, "modbus", None, out_name="avg_noalarm.xlsx")
+    assert "TempAVG\\" not in _names(res, "modbus")
+
+
+def test_alarm_reset_is_always_included(tmp_path):
+    res = _sensor_run(tmp_path, "modbus", None, alarm_selection=[], out_name="reset.xlsx")
+    names = _names(res, "modbus")
+    assert r"Alarm_Reset\Alarm_Reset" in names
+    other = _sensor_run(tmp_path, "bacnet", None, out_name="reset_ba.xlsx")
+    assert r"Alarm_Reset\Alarm_Reset" in _names(other, "bacnet")

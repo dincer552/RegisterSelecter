@@ -35,8 +35,15 @@ cihaza özel Excel listeleri üreten Windows masaüstü programi.
    Blok tiki kaldirilirsa alarm satirlari dahil tum blok silinir; transmitter tiki
    kaldirilirsa `PrHighAlarm`, `PrHighAlmSet`, `DuctPress`, `DuctPressureBMS` ve
    `QBM97xx_*.CommAlarm` satirlari silinir. `Air_FlowFan1/2` satirlari her zaman kalir.
-6. **6. Cikti** – cihaz adi (örn. `AHU-01`) ve cikti klasörü.
-7. **EXCEL LISTELERINI OLUSTUR** butonuna bas.
+6. **6. Filtre Alarmlari** – **FILTRE ALARMLARINI SEC (19)** butonu pop-up acar.
+   Standart Excel'den okunan 19 filtre kirlilik alarmi tek tek tiklanir; tik
+   kaldirilan alarmin `Alarm\<Token>` satiri listeden silinir.
+   **Tumunu Sec / Tumunu Kaldir** butonlari ve `Secili: x/19` sayaci pop-up
+   icinde de guncellenir. Pop-up acikken fare tekerlegi pop-up listesini kaydirdir.
+   - `Alarm_Reset\Alarm_Reset` satiri **her zaman** listeye eklenir (tik ile degismez).
+   - `TempAVG` grubu (ortalama oda sicakligi) **hicbir sekilde** listeye eklenmez.
+7. **7. Cikti** – cihaz adi (örn. `AHU-01`) ve cikti klasörü.
+8. **EXCEL LISTELERINI OLUSTUR** butonuna bas.
 
 Cikti: `AHU-01_Modbus_Reg_List.xlsx` ve `AHU-01_BACnet_Reg_List.xlsx`
 
@@ -58,8 +65,10 @@ Islem Kaydi alaninin tekerlegi kendi metnini kaydirir.
   kademe 0 ise grubun genel satirlari da silinir.
 - Blok tiklari (SAF / EAF / RunAround) kaldirilirsa o blogun tum satirlari silinir;
   blok secili degilse transmitter tiki tek basina hicbir satir geri getirmez.
+- Pop-up'ta tik kaldirilan filtre alarmi satiri silinir; `Alarm_Reset` her zaman
+  kalir, `TempAVG` grubu her zaman silinir (secimden bagimsiz).
 - Sabit satirlar her zaman korunur: AHU start/stop, batarya, `Air_FlowFan1/2`
-  havalandirma satirlari, genel alarm satirlari, `BmsTemp_Hum`, `TempAVG`, `Hum_Mod_Sel`.
+  havalandirma satirlari, genel alarm satirlari, `BmsTemp_Hum`, `Hum_Mod_Sel`.
 
 ## Algilanan sensorler (standart listeden otomatik)
 
@@ -99,6 +108,23 @@ tarafin kendisi 1 `Dmp_Pos` satiri -> toplam **102 satir/protokol**.
 
 Toplam **56 satir/protokol**. Blok isimleri `FEATURE_GROUPS` tablosundan gelir;
 standart listeye yeni blok eklerken sadece bu tabloya satir eklemek yeterlidir.
+
+## Filtre alarmlari (standart listeden otomatik)
+
+Program `Alarm\<Token>` satirlarini standart Excel'den tarar; pop-up'ta tek tek
+secilir. Etiket sutunu bos ya da register adinin ayni ise etiket token'dan
+uretilir (`FreshM5FilterAlm` -> `Fresh M5 Filter Alarm`).
+
+| Grup | Token kalibi | Adet |
+|---|---|---|
+| Taraf bazli kirli filtre alarmlari | `{Fresh,Return,Supply}{M5,G4,F7,F9,G2}FilterAlm` | 15 |
+| Ozel filtreler | `CarbonFilterAlm`, `HepaFilterAlm`, `H13FilterAlm`, `NuclearHepaFilterAlm` | 4 |
+
+Toplam **19 alarm satiri/protokol**. Ayrica:
+
+- `Alarm_Reset\Alarm_Reset` (1 satir) **sabit** kalir, pop-up'ta listelenmez.
+- `TempAVG` grubu (5 satir) secimden bagimsiz **her zaman silinir**.
+- Standart listeye yeni `Alarm\...` satiri eklersen pop-up'ta otomatik belirir.
 
 ## Marka bloklari (standart listedeki karsiliklari)
 

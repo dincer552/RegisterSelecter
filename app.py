@@ -12,14 +12,18 @@ from tkinter import filedialog, messagebox, ttk
 
 import updater
 from register_engine import (
+    ALARM_GROUP_PREFIX,
+    ALWAYS_DROPPED_OBJECTS,
     BRANDS,
     DamperGroup,
     FeatureGroup,
+    FilterAlarm,
     SensorGroup,
     StageGroup,
     generate,
     list_damper_groups,
     list_feature_groups,
+    list_filter_alarms,
     list_sensor_groups,
     list_stage_groups,
 )
@@ -87,6 +91,7 @@ class App(tk.Tk):
 
         self._update_info: updater.ReleaseInfo | None = None
         self._update_dialog: tk.Toplevel | None = None
+        self.alarm_popup: tk.Toplevel | None = None
         self.progress_bar: ttk.Progressbar | None = None
         self.progress_label: tk.Label | None = None
         self._checking = False
@@ -106,6 +111,7 @@ class App(tk.Tk):
         self._build_damper_section(body)
         self._build_stage_section(body)
         self._build_feature_section(body)
+        self._build_alarm_section(body)
         self._build_output_section(body)
         self._load_config()
 
@@ -115,7 +121,18 @@ class App(tk.Tk):
     def _on_mousewheel(self, event) -> None:
         if getattr(event.widget, "winfo_class", lambda: "")() == "Text":
             return  # islem kaydi kendi icerigini kaydirir
-        self.scroll.wheel_scroll(event.delta)
+        self._wheel_target(event).wheel_scroll(event.delta)
+
+    def _wheel_target(self, event) -> ScrollFrame:
+        """Tekerlek olayinin ait oldugu pencerenin kaydirma alanini dondurur."""
+        popup = self.alarm_popup
+        if popup is not None:
+            try:
+                if event.widget.winfo_toplevel() is popup:
+                    return popup.scroll
+            except (tk.TclError, AttributeError):
+                pass
+        return self.scroll
 
     # ---------- header ----------
     def _build_header(self) -> None:
@@ -437,9 +454,105 @@ class App(tk.Tk):
             for group in self.feature_groups
         }
 
-    # ---------- section 6: output ----------
+    # ---------- section 6: filtre alarmlari (pop-up) ----------
+    def _build_alarm_section(self, parent) -> None:
+        sec = tk.LabelFrame(parent, text=" 6. Filtre Alarmlari ", bg="white", font=("Segoe UI", 11, "bold"), labelanchor="nw")
+        sec.pack(fill="x", padx=2, pady=6)
+
+        self.alarm_vars: dict[str, tk.BooleanVar] = {}
+        self.alarm_alarms: list[FilterAlarm] = []
+
+        tk.Label(
+            sec,
+            text="Filtre kirlilik alarmlari standart listeden okunur ve pop-up icinde tek tek secilir; "
+            "secilmeyen alarm satiri listeden silinir. Alarm_Reset registeri her zaman eklenir, "
+            "TempAVG grubu ise hicbir sekilde eklenmez.",
+            bg="white", fg="#4b5563", font=("Segoe UI", 9), wraplength=760, justify="left", anchor="w",
+        ).pack(fill="x", padx=10, pady=(6, 2))
+
+        row = tk.Frame(sec, bg="white")
+        row.pack(fill="x", padx=10, pady=(2, 10))
+        btn = tk.Button(
+            row, text="FILTRE ALARMLARINI SEC", font=("Segoe UI", 10, "bold"),
+            bg=ACCENT, fg="white", relief="flat", activebackground="#0a5f45", activeforeground="white",
+            cursor="hand2", padx=12, pady=4, command=self._open_alarm_popup,
+        )
+        btn.pack(side="left")
+        self.alarm_summary = tk.Label(row, text="", bg="white", fg=GRAY, font=("Segoe UI", 9))
+        self.alarm_summary.pack(side="left", padx=12)
+
+        try:
+            self.alarm_alarms = list_filter_alarms(resource_path("data"))
+        except Exception as exc:  # noqa: BLE001
+            tk.Label(sec, text=f"Standart liste okunamadi: {exc}", bg="white", fg=RED).pack(anchor="w", padx=10, pady=8)
+            return
+        btn.configure(text=f"FILTRE ALARMLARINI SEC ({len(self.alarm_alarms)})")
+        for alarm in self.alarm_alarms:
+            self.alarm_vars.setdefault(alarm.token, tk.BooleanVar(value=True))
+        self._refresh_alarm_summary()
+
+    def _refresh_alarm_summary(self) -> None:
+        chosen = self._alarm_selection()
+        self.alarm_summary.configure(text=f"Secili: {len(chosen)}/{len(self.alarm_alarms)} filtre alarmi")
+        if self.alarm_popup is not None:
+            self.alarm_popup.summary.configure(text=f"Secili: {len(chosen)}/{len(self.alarm_alarms)}")
+
+    def _open_alarm_popup(self) -> None:
+        if not self.alarm_alarms:
+            return
+        if self.alarm_popup is not None:
+            self.alarm_popup.lift()
+            return
+        dlg = tk.Toplevel(self)
+        dlg.title("Filtre Alarmlari")
+        dlg.configure(bg=BG)
+        dlg.geometry("480x540")
+        dlg.transient(self)
+        dlg.grab_set()
+        self.alarm_popup = dlg
+
+        tk.Label(
+            dlg, text="Cihazinda bulunan filtre alarmlarini isaretle.", bg=BG, fg="#1f2a37", font=("Segoe UI", 10, "bold")
+        ).pack(padx=14, pady=(12, 4), anchor="w")
+
+        box = ScrollFrame(dlg)
+        box.pack(fill="both", expand=True, padx=10, pady=4)
+        dlg.scroll = box
+        for alarm in self.alarm_alarms:
+            tk.Checkbutton(
+                box.inner, text=f"{alarm.label}   ({alarm.token})", variable=self.alarm_vars[alarm.token],
+                bg="white", font=("Segoe UI", 10), activebackground="white", selectcolor="white",
+                command=self._refresh_alarm_summary,
+            ).pack(anchor="w", padx=10, pady=2, fill="x")
+
+        footer = tk.Frame(dlg, bg=BG)
+        footer.pack(fill="x", padx=12, pady=(4, 12))
+        tk.Button(footer, text="Tumunu Sec", font=("Segoe UI", 9), command=lambda: self._set_all_alarms(True)).pack(side="left")
+        tk.Button(footer, text="Tumunu Kaldir", font=("Segoe UI", 9), command=lambda: self._set_all_alarms(False)).pack(side="left", padx=6)
+        dlg.summary = tk.Label(footer, text="", bg=BG, fg=GRAY, font=("Segoe UI", 9))
+        dlg.summary.pack(side="left", padx=10)
+        tk.Button(footer, text="Kapat", font=("Segoe UI", 9, "bold"), command=self._close_alarm_popup).pack(side="right")
+        dlg.bind("<Destroy>", self._on_alarm_popup_destroy, add="+")
+        self._refresh_alarm_summary()
+
+    def _on_alarm_popup_destroy(self, _event) -> None:
+        self.alarm_popup = None
+
+    def _close_alarm_popup(self) -> None:
+        if self.alarm_popup is not None:
+            self.alarm_popup.destroy()
+
+    def _set_all_alarms(self, value: bool) -> None:
+        for var in self.alarm_vars.values():
+            var.set(value)
+        self._refresh_alarm_summary()
+
+    def _alarm_selection(self) -> list[str]:
+        return [alarm.token for alarm in self.alarm_alarms if self.alarm_vars[alarm.token].get()]
+
+    # ---------- section 7: output ----------
     def _build_output_section(self, parent) -> None:
-        sec = tk.LabelFrame(parent, text=" 6. Cikti ", bg="white", font=("Segoe UI", 11, "bold"), labelanchor="nw")
+        sec = tk.LabelFrame(parent, text=" 7. Cikti ", bg="white", font=("Segoe UI", 11, "bold"), labelanchor="nw")
         sec.pack(fill="x", padx=2, pady=6)
 
         self.device_var = tk.StringVar(value="AHU-01")
@@ -508,6 +621,7 @@ class App(tk.Tk):
         dampers = self._damper_selection()
         stages = self._stage_selection()
         features = self._feature_selection()
+        alarms = self._alarm_selection()
         any_sensor = any(sensors.values()) if sensors else True
         any_damper = any(dampers.values()) if dampers else True
         any_stage = any(stages.values()) if stages else True
@@ -539,6 +653,7 @@ class App(tk.Tk):
                 damper_selection=dampers,
                 stage_selection=stages,
                 feature_selection=features,
+                alarm_selection=alarms,
             )
         except Exception as exc:  # noqa: BLE001
             messagebox.showerror("Hata", f"Listeler olusturulamadi:\n{exc}")
@@ -549,7 +664,8 @@ class App(tk.Tk):
                     f"[{res.protocol}] fan {res.kept_fan_rows}/{res.total_fan_rows}, "
                     f"damper {res.kept_damper_rows}/{res.total_damper_rows}, "
                     f"kademe {res.kept_stage_rows}/{res.total_stage_rows}, "
-                    f"blok {res.kept_feature_rows}/{res.total_feature_rows} satir, "
+                    f"blok {res.kept_feature_rows}/{res.total_feature_rows}, "
+                    f"filtre alarmi {res.kept_alarm_rows}/{res.total_alarm_rows} satir, "
                     f"toplam {res.removed_rows} satir silindi -> {res.output}"
                 )
             buckets = self._removed_groups(results)
@@ -559,6 +675,8 @@ class App(tk.Tk):
                 ("Silinen damper motorlari", "damper"),
                 ("Silinen kademe satirlari", "stage"),
                 ("Silinen blok satirlari", "feature"),
+                ("Secilmeyen filtre alarmlari", "alarm"),
+                ("Her zaman cikarilan gruplar", "dropped"),
                 ("Silinen fan bloklari", "fan"),
             ):
                 self.log_line(f"{title}: " + (", ".join(
@@ -576,12 +694,17 @@ class App(tk.Tk):
         stage_labels = {g.label for g in self.stage_groups}
         feature_labels = {g.label for g in self.feature_groups}
         brand_labels = {b["label"] for b in BRANDS.values()}
+        dropped_labels = tuple(ALWAYS_DROPPED_OBJECTS.values())
         buckets: dict[str, dict[str, int]] = {
-            "sensor": {}, "damper": {}, "stage": {}, "feature": {}, "fan": {}
+            "sensor": {}, "damper": {}, "stage": {}, "feature": {}, "alarm": {}, "dropped": {}, "fan": {}
         }
         for res in results:
             for name, count in res.removed_by_group.items():
-                if any(name.startswith(lbl) for lbl in damper_labels):
+                if name.startswith(ALARM_GROUP_PREFIX):
+                    kind = "alarm"
+                elif name.startswith(dropped_labels):
+                    kind = "dropped"
+                elif any(name.startswith(lbl) for lbl in damper_labels):
                     kind = "damper"
                 elif any(name.startswith(lbl) for lbl in sensor_labels):
                     kind = "sensor"
@@ -792,6 +915,12 @@ class App(tk.Tk):
             for code, var in self.feature_vars[group.obj].items():
                 var.set(code in chosen)
             self._sync_feature_subs(group)
+        alarms = cfg.get("alarms")
+        if alarms is not None:
+            chosen = set(alarms)
+            for token, var in self.alarm_vars.items():
+                var.set(token in chosen)
+            self._refresh_alarm_summary()
 
     def _save_config(self) -> None:
         cfg = {
@@ -805,6 +934,7 @@ class App(tk.Tk):
             "dampers": self._damper_selection(),
             "stages": self._stage_selection(),
             "features": self._feature_selection(),
+            "alarms": self._alarm_selection(),
         }
         try:
             config_file().write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
