@@ -321,6 +321,10 @@ def test_generate_passes_sensor_selection(tmp_path):
 # Her iki listede de 6 taraf x (1 pozisyon + 4 motor x 4 satır) = 102 satır
 EXPECTED_TOTAL_DAMPER_ROWS = 102
 DAMPER_SIDES = {"Sup", "Fresh", "Return", "Ext", "Mix", "ByPass"}
+# Karışım motoru seçilmediğinde silinen DamperCont parametre satırları
+EXPECTED_DMP_PARAM_ROWS = 3
+DMP_PARAM_GROUP = "Damper parametreleri - Karışım hava damper motoru secilmedi"
+DMP_PARAM_TOKENS = (r"DamperCont\DmpAutoManSel_BMS", r"DamperCont\DmpMinRef_BMS", r"DamperCont\DmpManRef_BMS")
 
 
 @pytest.mark.parametrize(
@@ -363,16 +367,24 @@ def test_damper_full_selection_removes_nothing_extra(tmp_path):
     assert res.total_damper_rows == EXPECTED_TOTAL_DAMPER_ROWS
     assert res.kept_damper_rows == EXPECTED_TOTAL_DAMPER_ROWS
     assert res.removed_rows == FAN_BASELINE_REMOVED
+    names = _names(res, "modbus")
+    for token in DMP_PARAM_TOKENS:
+        assert token in names
 
 
 def test_damper_zero_selection_removes_whole_block(tmp_path):
     res = _sensor_run(tmp_path, "modbus", None, damper_selection={}, out_name="none.xlsx")
     assert res.kept_damper_rows == 0
-    assert res.removed_rows == FAN_BASELINE_REMOVED + EXPECTED_TOTAL_DAMPER_ROWS
+    assert res.removed_rows == FAN_BASELINE_REMOVED + EXPECTED_TOTAL_DAMPER_ROWS + EXPECTED_DMP_PARAM_ROWS
     names = _names(res, "modbus")
     assert "DmpMB_Siemens" not in names
+    # karisim motoru 0 -> auto/manuel secim + referans satirlari da silinir
+    for token in DMP_PARAM_TOKENS:
+        assert token not in names
+    assert res.removed_by_group[DMP_PARAM_GROUP] == EXPECTED_DMP_PARAM_ROWS
     # damper kontrol/parametre satirlari (DamperCont, BypassDmpCont) sabit kalir
     assert r"DamperCont\DmpContTypeSel" in names
+    assert r"DamperCont\CO2_Set_BMS" in names
     assert r"BypassDmpCont\BypassRecMod" in names
 
 
@@ -391,6 +403,33 @@ def test_damper_unit_counts_per_side(tmp_path):
     assert "ExtDmpMB_Siemens" not in names
     assert res.removed_by_group["Egzoz damper motoru #1"] == 5
     assert res.removed_by_group["Taze hava damper motoru #2"] == 4
+
+
+@pytest.mark.parametrize("protocol", ["modbus", "bacnet"])
+def test_damper_param_rows_follow_mix_count(tmp_path, protocol):
+    """Karisim motoru >= 1 ise DamperCont auto/man secim + referans satirlari kalir, 0 ise silinir."""
+    kept = _sensor_run(tmp_path, protocol, None, damper_selection={"Mix|Siemens": 1},
+                       out_name=f"mix1_{protocol}.xlsx")
+    names = _names(kept, protocol)
+    for token in DMP_PARAM_TOKENS:
+        assert token in names
+    assert DMP_PARAM_GROUP not in kept.removed_by_group
+
+    dropped = _sensor_run(tmp_path, protocol, None, damper_selection={"Mix|Siemens": 0},
+                          out_name=f"mix0_{protocol}.xlsx")
+    names = _names(dropped, protocol)
+    for token in DMP_PARAM_TOKENS:
+        assert token not in names
+    assert dropped.removed_by_group[DMP_PARAM_GROUP] == EXPECTED_DMP_PARAM_ROWS
+
+
+def test_damper_param_rows_untouched_without_damper_step(tmp_path):
+    """Damper adimi hic kullanilmazsa (selection None) davranis degismez."""
+    res = _sensor_run(tmp_path, "modbus", None)
+    names = _names(res, "modbus")
+    for token in DMP_PARAM_TOKENS:
+        assert token in names
+    assert DMP_PARAM_GROUP not in res.removed_by_group
 
 
 def test_generate_with_damper_selection(tmp_path):

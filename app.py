@@ -15,6 +15,7 @@ from register_engine import (
     ALARM_GROUP_PREFIX,
     ALWAYS_DROPPED_OBJECTS,
     BRANDS,
+    DAMPER_PARAM_GROUP_PREFIX,
     DamperGroup,
     FAN_DOOR_GROUP_PREFIX,
     FeatureGroup,
@@ -319,7 +320,8 @@ class App(tk.Tk):
         tk.Label(
             head,
             text="Her tarafa kac damper motoru baglanacagini sec. Sayilan motorlardan fazlasi ve "
-            "secilmeyen tarafin pozisyon/feedback/alarm satirlari silinir.",
+            "secilmeyen tarafin pozisyon/feedback/alarm satirlari silinir. "
+            "Karisim motoru 0 ise DamperCont Auto/Manuel Secim + Min/Manuel Referans satirlari da silinir.",
             bg="white", fg="#4b5563", font=("Segoe UI", 9), wraplength=760, justify="left", anchor="w",
         ).pack(side="left")
 
@@ -781,6 +783,8 @@ class App(tk.Tk):
                     kind = "fan"
                 elif name.startswith(VALVE_GROUP_PREFIX):
                     kind = "valve"
+                elif name.startswith(DAMPER_PARAM_GROUP_PREFIX):
+                    kind = "damper"
                 elif any(name.startswith(lbl) for lbl in damper_labels):
                     kind = "damper"
                 elif any(name.startswith(lbl) for lbl in sensor_labels):

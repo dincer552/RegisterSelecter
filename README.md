@@ -22,6 +22,9 @@ cihaza özel Excel listeleri üreten Windows masaüstü programi.
    Her taraf için **tik kutusu + motor adedi** (1-4). Tik kaldirilan tarafin
    pozisyon (`Dmp_Pos`), geri bildirim (`Dmp_Fdb`) ve
    CommAlarm/FeedbackAlarm/Mechanical_fault satirlari tamamen silinir.
+   **Karisim (Mix) motoru 0 ise** `DamperCont\DmpAutoManSel_BMS`,
+   `DamperCont\DmpMinRef_BMS` ve `DamperCont\DmpManRef_BMS` satirlari da silinir;
+   bu satirlar karisim damperinin otomatik/manuel secimi ve referans degerleridir.
 4. **4. Isitici / DX Sogutucu Kademeleri** – kademe sayisi girilir (0 = Yok):
    - `DX sogutucu kademe sayisi` 0-10: DxN Alarm + DXN Defrost satirlari sayiya
      gore silinir. `DX_mode`, `DX_Status1`, `CapValuee`, `CapValuee1` genel
@@ -72,7 +75,10 @@ Islem Kaydi alaninin tekerlegi kendi metnini kaydirir.
 - Tik kaldirilan sensorün ölçü satirlari silinir; hicbir sinyali secilmeyen
   sensorün **CommAlarm** satiri da silinir (en az bir sinyal seciliyorsa alarm kalir).
 - Secilen adetten fazla damper motorlarinin satirlari ve tik kaldirilan tarafin
-  tum satirlari silinir. `DamperCont` / `BypassDmpCont` parametre satirlari silinmez.
+  tum satirlari silinir. `DamperCont\DmpAutoManSel_BMS`, `DmpMinRef_BMS` ve
+  `DmpManRef_BMS` satirlari **karisim motoru 0 ise** silinir (islem kaydinda
+  "Damper parametreleri - Karışım hava damper motoru secilmedi"); `DmpContTypeSel`,
+  `CO2_Set_BMS` ve `BypassDmpCont\...` satirlari her zaman kalir.
 - Isitici/DX kademelerinde secilen kademe sayisini asan satirlar silinir;
   kademe 0 ise grubun genel satirlari da silinir.
 - Blok tiklari (SAF / EAF / RunAround) kaldirilirsa o blogun tum satirlari silinir;
@@ -115,6 +121,8 @@ satirlarini bulur. Standart listeye yeni sensor eklersen programda otomatik gör
 Her motor 4 satir (Dmp_Fdb + CommAlarm + FeedbackAlarm + Mechanical_fault),
 tarafin kendisi 1 `Dmp_Pos` satiri -> toplam **102 satir/protokol**.
 `<Taraf>DmpMB_<Marka>` kalibina uyan yeni markalar da otomatik listelenir.
+Ek olarak `DamperCont`'in 3 parametre satiri (`DmpAutoManSel_BMS`, `DmpMinRef_BMS`,
+`DmpManRef_BMS`) karisim motoru adedine baglidir: karisim 0 ise bu 3 satir silinir.
 
 ## Blok secimleri (SAF / EAF / RunAround)
 
