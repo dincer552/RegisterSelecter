@@ -64,8 +64,14 @@ cihaza özel Excel listeleri üreten Windows masaüstü programi.
      kapanir ve tekrar gizlenir.
    - Vana satirlari da standart Excel'den otomatik algilanir; standart listeye
      `TmpControl\CV2_Pos` gibi yeni bir vana satiri eklersen programda belirir.
-8. **8. Cikti** – cihaz adi (örn. `AHU-01`) ve cikti klasörü.
-9. **EXCEL LISTELERINI OLUSTUR** butonuna bas.
+8. **8. Rotor (Isi Geri Kazanim)** – **Rotor kontrol modu** acilir listesi:
+   `Yok` (varsayilan), `Oransal`, `On/Off`.
+   - `Yok` -> `RotorControl` satirlarinin **hicbiri** listeye girmez.
+   - `Oransal` -> `RotorControl` altindaki **tum** satirlar girer (Mode Select,
+     Manuel Set, Max Speed, Pozisyon, Active, Alarm).
+   - `On/Off` -> yalnizca `RotorControl\RotorActive` ve `RotorControl\Rotor Alarm` girer.
+9. **9. Cikti** – cihaz adi (örn. `AHU-01`) ve cikti klasörü.
+10. **EXCEL LISTELERINI OLUSTUR** butonuna bas.
 
 Cikti: `AHU-01_Modbus_Reg_List.xlsx` ve `AHU-01_BACnet_Reg_List.xlsx`
 
@@ -100,6 +106,9 @@ Islem Kaydi alaninin tekerlegi kendi metnini kaydirir.
 - Tik kaldirilan su vanasinin (CV1/CV2/HV1/HV2) tum satirlari silinir. `CV2`/`HV2`
   kutusu ana vana secilmedigi surece gorunmez ve secilemez; ana tik kaldirilirsa
   alt vana da otomatik kapanir. Islem kaydinda "Vana satirlari - ..." olarak listelenir.
+- Rotor modu `Yok` ise `RotorControl` satirlarinin 6'si da silinir ("Rotor - rotor
+  secilmedi"); `On/Off` ise yalnizca `RotorActive` + `Rotor Alarm` kalir, kalan 4
+  satir "Rotor - oransal satirlar (on/off secildi)" olarak listelenir.
 - Sabit satirlar her zaman korunur: AHU start/stop, `AHUStart\VANTDOORSW`
   (vantilator kapak sensoru), batarya, `Air_FlowFan1/2`
   havalandirma satirlari, genel alarm satirlari, `BmsTemp_Hum`, `Hum_Mod_Sel`.
@@ -187,6 +196,19 @@ Toplam **19 alarm satiri/protokol**. Ayrica:
 Toplam **13 satir/protokol**. `CV2` su an sadece geri bildirim satirina sahip
 (standart listede `CV2ModeSel` / `CV2_Man_Ref` / `CV_Pos2` yok); bu satirlar
 standart listeye eklendiginde 2. vana kutusunda otomatik gorunur.
+
+## Rotor modu (standart listeden otomatik)
+
+`RotorControl` blogu **6 satir/protokol** ve mod secimine gore listeye girer:
+
+| Mod | Kalan satirlar | Adet |
+|---|---|---|
+| `Yok` (varsayilan) | - | 0 |
+| `Oransal` | `RotorModeSelBMS`, `RotorManSetBMS`, `RotorMaxSpeed`, `RotorPos`, `RotorActive`, `Rotor Alarm` | 6 |
+| `On/Off` | `RotorActive`, `Rotor Alarm` | 2 |
+
+Rotor secimi ayri bir adimdir; standart listeye yeni `RotorControl\...` satiri
+eklersen `Oransal` modunda otomatik olarak listeye girer.
 
 ## Marka bloklari (standart listedeki karsiliklari)
 

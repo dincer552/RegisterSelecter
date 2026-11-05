@@ -889,3 +889,86 @@ def test_generate_passes_valve_selection(tmp_path):
         names = _names(res, protocol)
         assert "CV_" not in names and "CVModeSel" not in names
         assert r"TmpControl\HV2_Man_Ref_BMS" in names
+
+
+# ---------- rotor (isi geri kazanim) modu secimi ----------
+
+# Rotor Alarm + ModeSel + ManSet + MaxSpeed + Pos + Active
+EXPECTED_TOTAL_ROTOR_ROWS = 6
+ROTOR_PROPORTIONAL_TOKENS = (
+    r"RotorControl\RotorModeSelBMS",
+    r"RotorControl\RotorManSetBMS",
+    r"RotorControl\RotorMaxSpeed",
+    r"RotorControl\RotorPos",
+)
+ROTOR_ONOFF_TOKENS = (r"RotorControl\RotorActive", r"RotorControl\Rotor Alarm")
+ROTOR_NONE_GROUP = "Rotor - rotor secilmedi"
+ROTOR_ONOFF_GROUP = "Rotor - oransal satirlar (on/off secildi)"
+
+
+@pytest.mark.parametrize("protocol", ["modbus", "bacnet"])
+def test_rotor_yok_removes_every_rotor_row(tmp_path, protocol):
+    res = _sensor_run(tmp_path, protocol, None, rotor_mode="yok", out_name=f"rotor_yok_{protocol}.xlsx")
+    assert res.total_rotor_rows == EXPECTED_TOTAL_ROTOR_ROWS
+    assert res.kept_rotor_rows == 0
+    assert res.removed_rows == FAN_BASELINE_REMOVED + EXPECTED_TOTAL_ROTOR_ROWS
+    assert res.removed_by_group[ROTOR_NONE_GROUP] == EXPECTED_TOTAL_ROTOR_ROWS
+    names = _names(res, protocol)
+    for token in ROTOR_PROPORTIONAL_TOKENS + ROTOR_ONOFF_TOKENS:
+        assert token not in names
+
+
+@pytest.mark.parametrize("protocol", ["modbus", "bacnet"])
+def test_rotor_proportional_keeps_all_rows(tmp_path, protocol):
+    res = _sensor_run(
+        tmp_path, protocol, None, rotor_mode="proportional", out_name=f"rotor_oransal_{protocol}.xlsx"
+    )
+    assert res.kept_rotor_rows == EXPECTED_TOTAL_ROTOR_ROWS
+    assert res.removed_rows == FAN_BASELINE_REMOVED
+    assert not [key for key in res.removed_by_group if key.startswith("Rotor - ")]
+    names = _names(res, protocol)
+    for token in ROTOR_PROPORTIONAL_TOKENS + ROTOR_ONOFF_TOKENS:
+        assert token in names
+
+
+@pytest.mark.parametrize("protocol", ["modbus", "bacnet"])
+def test_rotor_onoff_keeps_only_active_and_alarm(tmp_path, protocol):
+    res = _sensor_run(tmp_path, protocol, None, rotor_mode="onoff", out_name=f"rotor_onoff_{protocol}.xlsx")
+    assert res.kept_rotor_rows == len(ROTOR_ONOFF_TOKENS)
+    assert res.removed_rows == FAN_BASELINE_REMOVED + len(ROTOR_PROPORTIONAL_TOKENS)
+    assert res.removed_by_group[ROTOR_ONOFF_GROUP] == len(ROTOR_PROPORTIONAL_TOKENS)
+    names = _names(res, protocol)
+    for token in ROTOR_ONOFF_TOKENS:
+        assert token in names
+    for token in ROTOR_PROPORTIONAL_TOKENS:
+        assert token not in names
+
+
+def test_rotor_mode_unused_keeps_all_rows(tmp_path):
+    """Rotor adimi hic kullanilmazsa (rotor_mode None) davranis degismez."""
+    res = _sensor_run(tmp_path, "modbus", None)
+    names = _names(res, "modbus")
+    for token in ROTOR_PROPORTIONAL_TOKENS + ROTOR_ONOFF_TOKENS:
+        assert token in names
+    assert res.total_rotor_rows == 0
+
+
+def test_rotor_unknown_mode_rejected(tmp_path):
+    with pytest.raises(ValueError):
+        _sensor_run(tmp_path, "modbus", None, rotor_mode="invertör", out_name="rotor_bad.xlsx")
+
+
+def test_generate_passes_rotor_mode(tmp_path):
+    results = generate(
+        data_dir=DATA_DIR,
+        output_dir=tmp_path,
+        device_prefix="AHU-10",
+        supply_brand="ebm",
+        supply_count=1,
+        exhaust_brand="ebm",
+        exhaust_count=1,
+        rotor_mode="onoff",
+    )
+    for res in results:
+        assert res.total_rotor_rows == EXPECTED_TOTAL_ROTOR_ROWS
+        assert res.kept_rotor_rows == 2

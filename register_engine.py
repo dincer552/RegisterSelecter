@@ -409,6 +409,31 @@ def list_valve_groups(data_dir: Path) -> list[ValveGroup]:
     return [merged[key] for key in sorted(merged, key=_valve_sort_key)]
 
 
+# Rotor (isi geri kazanim) blogu mod secimine gore listeye girer:
+#   "yok"          -> hicbir rotor satiri kalmayin
+#   "proportional" -> RotorControl altindaki tum satirlar kalir
+#   "onoff"        -> yalnizca aktiflik sinyali ve rotor alarmi kalir
+ROTOR_OBJECT = "RotorControl"
+ROTOR_MODES: dict[str, str] = {"yok": "Yok", "proportional": "Oransal", "onoff": "On/Off"}
+ROTOR_DEFAULT_MODE = "yok"
+ROTOR_ONOFF_TOKENS = frozenset({"RotorActive", "Rotor Alarm"})
+ROTOR_GROUP_PREFIX = "Rotor - "
+
+
+def _rotor_row_kept(mode: str, tok: str) -> bool:
+    if mode == "yok":
+        return False
+    if mode == "proportional":
+        return True
+    return tok in ROTOR_ONOFF_TOKENS
+
+
+def _rotor_removed_group(mode: str) -> str:
+    if mode == "yok":
+        return f"{ROTOR_GROUP_PREFIX}rotor secilmedi"
+    return f"{ROTOR_GROUP_PREFIX}oransal satirlar (on/off secildi)"
+
+
 # Filtre kirlilik alarmlari: "Alarm\<Token>" satirlari, tek tek secilir.
 FILTER_ALARM_OBJECT = "Alarm"
 ALARM_GROUP_PREFIX = "Filtre alarmi - "
@@ -624,6 +649,8 @@ class FilterResult:
     total_feature_rows: int = 0
     kept_valve_rows: int = 0
     total_valve_rows: int = 0
+    kept_rotor_rows: int = 0
+    total_rotor_rows: int = 0
     kept_alarm_rows: int = 0
     total_alarm_rows: int = 0
     removed_by_group: dict[str, int] = field(default_factory=dict)
@@ -689,9 +716,12 @@ def filter_standard_list(
     stage_selection: dict[str, int] | None = None,
     feature_selection: dict[str, list[str]] | None = None,
     valve_selection: list[str] | None = None,
+    rotor_mode: str | None = None,
     alarm_selection: list[str] | None = None,
 ) -> FilterResult:
     cfg = PROTOCOLS[protocol]
+    if rotor_mode is not None and rotor_mode not in ROTOR_MODES:
+        raise ValueError(f"bilinmeyen rotor modu: {rotor_mode}")
     selections = {
         "supply": (supply_brand, supply_count),
         "exhaust": (exhaust_brand, exhaust_count),
@@ -743,6 +773,8 @@ def filter_standard_list(
     total_feature_rows = 0
     kept_valve_rows = 0
     total_valve_rows = 0
+    kept_rotor_rows = 0
+    total_rotor_rows = 0
     kept_alarm_rows = 0
     total_alarm_rows = 0
 
@@ -801,6 +833,12 @@ def filter_standard_list(
                 kept_valve_rows += 1
                 continue
             group = f"{VALVE_GROUP_PREFIX}{valve_labels.get(valve_key, valve_key)}"
+        elif rotor_mode is not None and parsed_obj == ROTOR_OBJECT:
+            total_rotor_rows += 1
+            if _rotor_row_kept(rotor_mode, parsed_tok or ""):
+                kept_rotor_rows += 1
+                continue
+            group = _rotor_removed_group(rotor_mode)
         elif damper_selection is not None and (side := _damper_param_side(parsed_obj, parsed_tok)):
             if not _damper_side_used(damper_selection, side):
                 group = f"{DAMPER_PARAM_GROUP_PREFIX}{SIDE_LABELS[side]} secilmedi"
@@ -871,6 +909,8 @@ def filter_standard_list(
         total_feature_rows=total_feature_rows,
         kept_valve_rows=kept_valve_rows,
         total_valve_rows=total_valve_rows,
+        kept_rotor_rows=kept_rotor_rows,
+        total_rotor_rows=total_rotor_rows,
         kept_alarm_rows=kept_alarm_rows,
         total_alarm_rows=total_alarm_rows,
         removed_by_group=removed_by_group,
@@ -895,6 +935,7 @@ def generate(
     stage_selection: dict[str, int] | None = None,
     feature_selection: dict[str, list[str]] | None = None,
     valve_selection: list[str] | None = None,
+    rotor_mode: str | None = None,
     alarm_selection: list[str] | None = None,
 ) -> list[FilterResult]:
     prefix = device_prefix.strip() or "Cihaz"
@@ -915,6 +956,7 @@ def generate(
                 stage_selection=stage_selection,
                 feature_selection=feature_selection,
                 valve_selection=valve_selection,
+                rotor_mode=rotor_mode,
                 alarm_selection=alarm_selection,
             )
         )

@@ -20,6 +20,9 @@ from register_engine import (
     FAN_DOOR_GROUP_PREFIX,
     FeatureGroup,
     FilterAlarm,
+    ROTOR_DEFAULT_MODE,
+    ROTOR_GROUP_PREFIX,
+    ROTOR_MODES,
     SensorGroup,
     StageGroup,
     VALVE_GROUP_PREFIX,
@@ -46,6 +49,7 @@ GRAY = "#9aa5b1"
 RED = "#b91c1c"
 
 BRAND_CHOICES = [("Yok", None)] + [(cfg["label"], key) for key, cfg in BRANDS.items()]
+ROTOR_CHOICES = [(label, key) for key, label in ROTOR_MODES.items()]
 
 
 def resource_path(relative: str) -> Path:
@@ -118,6 +122,7 @@ class App(tk.Tk):
         self._build_feature_section(body)
         self._build_alarm_section(body)
         self._build_valve_section(body)
+        self._build_rotor_section(body)
         self._build_output_section(body)
         self._load_config()
 
@@ -622,9 +627,36 @@ class App(tk.Tk):
     def _valve_selection(self) -> list[str]:
         return [group.key for group in self.valve_groups if self.valve_vars[group.key].get()]
 
-    # ---------- section 8: output ----------
+    # ---------- section 8: rotor ----------
+    def _build_rotor_section(self, parent) -> None:
+        sec = tk.LabelFrame(parent, text=" 8. Rotor (Isi Geri Kazanim) ", bg="white", font=("Segoe UI", 11, "bold"), labelanchor="nw")
+        sec.pack(fill="x", padx=2, pady=6)
+
+        self.rotor_var = tk.StringVar(value=ROTOR_MODES[ROTOR_DEFAULT_MODE])
+        tk.Label(sec, text="Rotor kontrol modu", bg="white", font=("Segoe UI", 10)).grid(row=0, column=0, sticky="w", padx=14, pady=5)
+        self.rotor_combo = ttk.Combobox(
+            sec,
+            textvariable=self.rotor_var,
+            values=[label for label, _ in ROTOR_CHOICES],
+            state="readonly",
+            width=18,
+            font=("Segoe UI", 10),
+        )
+        self.rotor_combo.grid(row=0, column=1, sticky="w", padx=4, pady=5)
+        tk.Label(
+            sec,
+            text="Yok: rotor satirlarinin hicbiri eklenmez.   Oransal: RotorControl satirlarinin hepsi "
+            "(Mode Select, Manuel Set, Max Speed, Pozisyon, Active, Alarm) eklenir.   "
+            "On/Off: yalnizca RotorActive ve Rotor Alarm eklenir.",
+            bg="white", fg="#4b5563", font=("Segoe UI", 8), wraplength=760, justify="left", anchor="w",
+        ).grid(row=1, column=0, columnspan=4, sticky="w", padx=14, pady=(2, 6))
+
+    def _rotor_mode(self) -> str:
+        return dict(ROTOR_CHOICES).get(self.rotor_var.get(), ROTOR_DEFAULT_MODE)
+
+    # ---------- section 9: output ----------
     def _build_output_section(self, parent) -> None:
-        sec = tk.LabelFrame(parent, text=" 8. Cikti ", bg="white", font=("Segoe UI", 11, "bold"), labelanchor="nw")
+        sec = tk.LabelFrame(parent, text=" 9. Cikti ", bg="white", font=("Segoe UI", 11, "bold"), labelanchor="nw")
         sec.pack(fill="x", padx=2, pady=6)
 
         self.device_var = tk.StringVar(value="AHU-01")
@@ -694,6 +726,7 @@ class App(tk.Tk):
         stages = self._stage_selection()
         features = self._feature_selection()
         valves = self._valve_selection()
+        rotor = self._rotor_mode()
         alarms = self._alarm_selection()
         any_sensor = any(sensors.values()) if sensors else True
         any_damper = any(dampers.values()) if dampers else True
@@ -727,6 +760,7 @@ class App(tk.Tk):
                 stage_selection=stages,
                 feature_selection=features,
                 valve_selection=valves,
+                rotor_mode=rotor,
                 alarm_selection=alarms,
             )
         except Exception as exc:  # noqa: BLE001
@@ -740,6 +774,7 @@ class App(tk.Tk):
                     f"kademe {res.kept_stage_rows}/{res.total_stage_rows}, "
                     f"blok {res.kept_feature_rows}/{res.total_feature_rows}, "
                     f"vana {res.kept_valve_rows}/{res.total_valve_rows}, "
+                    f"rotor {res.kept_rotor_rows}/{res.total_rotor_rows}, "
                     f"filtre alarmi {res.kept_alarm_rows}/{res.total_alarm_rows} satir, "
                     f"toplam {res.removed_rows} satir silindi -> {res.output}"
                 )
@@ -751,6 +786,7 @@ class App(tk.Tk):
                 ("Silinen kademe satirlari", "stage"),
                 ("Silinen blok satirlari", "feature"),
                 ("Secilmeyen vana satirlari", "valve"),
+                ("Rotor satirlari", "rotor"),
                 ("Secilmeyen filtre alarmlari", "alarm"),
                 ("Her zaman cikarilan gruplar", "dropped"),
                 ("Silinen fan bloklari", "fan"),
@@ -773,7 +809,7 @@ class App(tk.Tk):
         dropped_labels = tuple(ALWAYS_DROPPED_OBJECTS.values())
         buckets: dict[str, dict[str, int]] = {
             "sensor": {}, "damper": {}, "stage": {}, "feature": {},
-            "valve": {}, "alarm": {}, "dropped": {}, "fan": {}
+            "valve": {}, "rotor": {}, "alarm": {}, "dropped": {}, "fan": {}
         }
         for res in results:
             for name, count in res.removed_by_group.items():
@@ -785,6 +821,8 @@ class App(tk.Tk):
                     kind = "fan"
                 elif name.startswith(VALVE_GROUP_PREFIX):
                     kind = "valve"
+                elif name.startswith(ROTOR_GROUP_PREFIX):
+                    kind = "rotor"
                 elif name.startswith(DAMPER_PARAM_GROUP_PREFIX):
                     kind = "damper"
                 elif any(name.startswith(lbl) for lbl in damper_labels):
@@ -1016,6 +1054,9 @@ class App(tk.Tk):
             for group in self.valve_groups:
                 if group.parent and self.valve_vars[group.parent].get():
                     self.valve_vars[group.key].set(group.key in chosen)
+        rotor_mode = cfg.get("rotor_mode")
+        if rotor_mode in ROTOR_MODES:
+            self.rotor_var.set(ROTOR_MODES[rotor_mode])
 
     def _save_config(self) -> None:
         cfg = {
@@ -1030,6 +1071,7 @@ class App(tk.Tk):
             "stages": self._stage_selection(),
             "features": self._feature_selection(),
             "valves": self._valve_selection(),
+            "rotor_mode": self._rotor_mode(),
             "alarms": self._alarm_selection(),
         }
         try:
