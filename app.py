@@ -20,6 +20,9 @@ from register_engine import (
     FAN_DOOR_GROUP_PREFIX,
     FeatureGroup,
     FilterAlarm,
+    HUM_CTRL_GROUP_PREFIX,
+    HUM_CTRL_OBJECT,
+    HUM_CTRL_TOKENS,
     ROTOR_DEFAULT_MODE,
     ROTOR_GROUP_PREFIX,
     ROTOR_MODES,
@@ -124,6 +127,7 @@ class App(tk.Tk):
         self._build_alarm_section(body)
         self._build_valve_section(body)
         self._build_rotor_section(body)
+        self._build_hum_control_section(body)
         self._build_output_section(body)
         self._load_config()
 
@@ -656,9 +660,31 @@ class App(tk.Tk):
     def _rotor_mode(self) -> str:
         return dict(ROTOR_CHOICES).get(self.rotor_var.get(), ROTOR_DEFAULT_MODE)
 
-    # ---------- section 9: output ----------
+    # ---------- section 9: nem kontrolu ----------
+    def _build_hum_control_section(self, parent) -> None:
+        sec = tk.LabelFrame(parent, text=" 9. Nem Kontrolu ", bg="white", font=("Segoe UI", 11, "bold"), labelanchor="nw")
+        sec.pack(fill="x", padx=2, pady=6)
+
+        self.hum_control_var = tk.BooleanVar(value=False)
+        tk.Checkbutton(
+            sec, text="Nem kontrolu var", variable=self.hum_control_var,
+            bg="white", font=("Segoe UI", 10), activebackground="white",
+        ).grid(row=0, column=0, columnspan=4, sticky="w", padx=14, pady=5)
+        tk.Label(
+            sec,
+            text="Secilirse su satirlar listeye eklenir: "
+            + ", ".join(f"{HUM_CTRL_OBJECT}\\{token}" for token in HUM_CTRL_TOKENS)
+            + f". Secilmezse bu {len(HUM_CTRL_TOKENS)} nem set ayar satiri silinir. Kademe sayisindan bagimsiz "
+            "bir secimdir, ancak kademe 0 ise zaten hicbir nemlendirici satiri listeye girmez.",
+            bg="white", fg="#4b5563", font=("Segoe UI", 8), wraplength=760, justify="left", anchor="w",
+        ).grid(row=1, column=0, columnspan=4, sticky="w", padx=14, pady=(2, 6))
+
+    def _hum_control_enabled(self) -> bool:
+        return bool(self.hum_control_var.get())
+
+    # ---------- section 10: output ----------
     def _build_output_section(self, parent) -> None:
-        sec = tk.LabelFrame(parent, text=" 9. Cikti ", bg="white", font=("Segoe UI", 11, "bold"), labelanchor="nw")
+        sec = tk.LabelFrame(parent, text=" 10. Cikti ", bg="white", font=("Segoe UI", 11, "bold"), labelanchor="nw")
         sec.pack(fill="x", padx=2, pady=6)
 
         self.device_var = tk.StringVar(value="AHU-01")
@@ -729,6 +755,7 @@ class App(tk.Tk):
         features = self._feature_selection()
         valves = self._valve_selection()
         rotor = self._rotor_mode()
+        hum_control = self._hum_control_enabled()
         alarms = self._alarm_selection()
         any_sensor = any(sensors.values()) if sensors else True
         any_damper = any(dampers.values()) if dampers else True
@@ -763,6 +790,7 @@ class App(tk.Tk):
                 feature_selection=features,
                 valve_selection=valves,
                 rotor_mode=rotor,
+                hum_control=hum_control,
                 alarm_selection=alarms,
             )
         except Exception as exc:  # noqa: BLE001
@@ -777,6 +805,7 @@ class App(tk.Tk):
                     f"blok {res.kept_feature_rows}/{res.total_feature_rows}, "
                     f"vana {res.kept_valve_rows}/{res.total_valve_rows}, "
                     f"rotor {res.kept_rotor_rows}/{res.total_rotor_rows}, "
+                    f"nem kontrolu {res.kept_hum_rows}/{res.total_hum_rows}, "
                     f"filtre alarmi {res.kept_alarm_rows}/{res.total_alarm_rows} satir, "
                     f"toplam {res.removed_rows} satir silindi -> {res.output}"
                 )
@@ -789,6 +818,7 @@ class App(tk.Tk):
                 ("Silinen blok satirlari", "feature"),
                 ("Secilmeyen vana satirlari", "valve"),
                 ("Rotor satirlari", "rotor"),
+                ("Nem kontrolu satirlari", "hum"),
                 ("Secilmeyen filtre alarmlari", "alarm"),
                 ("Her zaman cikarilan gruplar", "dropped"),
                 ("Silinen fan bloklari", "fan"),
@@ -811,7 +841,7 @@ class App(tk.Tk):
         dropped_labels = tuple(ALWAYS_DROPPED_OBJECTS.values())
         buckets: dict[str, dict[str, int]] = {
             "sensor": {}, "damper": {}, "stage": {}, "feature": {},
-            "valve": {}, "rotor": {}, "alarm": {}, "dropped": {}, "fan": {}
+            "valve": {}, "rotor": {}, "hum": {}, "alarm": {}, "dropped": {}, "fan": {}
         }
         for res in results:
             for name, count in res.removed_by_group.items():
@@ -825,6 +855,8 @@ class App(tk.Tk):
                     kind = "valve"
                 elif name.startswith(ROTOR_GROUP_PREFIX):
                     kind = "rotor"
+                elif name.startswith(HUM_CTRL_GROUP_PREFIX):
+                    kind = "hum"
                 elif name.startswith(DAMPER_PARAM_GROUP_PREFIX):
                     kind = "damper"
                 elif any(name.startswith(lbl) for lbl in damper_labels):
@@ -1059,6 +1091,7 @@ class App(tk.Tk):
         rotor_mode = cfg.get("rotor_mode")
         if rotor_mode in ROTOR_MODES:
             self.rotor_var.set(ROTOR_MODES[rotor_mode])
+        self.hum_control_var.set(bool(cfg.get("hum_control", False)))
 
     def _save_config(self) -> None:
         cfg = {
@@ -1074,6 +1107,7 @@ class App(tk.Tk):
             "features": self._feature_selection(),
             "valves": self._valve_selection(),
             "rotor_mode": self._rotor_mode(),
+            "hum_control": self._hum_control_enabled(),
             "alarms": self._alarm_selection(),
         }
         try:

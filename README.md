@@ -79,8 +79,13 @@ cihaza özel Excel listeleri üreten Windows masaüstü programi.
    - `Oransal` -> `RotorControl` altindaki **tum** satirlar girer (Mode Select,
      Manuel Set, Max Speed, Pozisyon, Active, Alarm).
    - `On/Off` -> yalnizca `RotorControl\RotorActive` ve `RotorControl\Rotor Alarm` girer.
-9. **9. Cikti** – cihaz adi (örn. `AHU-01`) ve cikti klasörü.
-10. **EXCEL LISTELERINI OLUSTUR** butonuna bas.
+9. **9. Nem Kontrolu** – **Nem kontrolu var** tik kutusu (varsayilan tikli degil).
+   Tikli ise `Hum_Mod_Sel\HUM_Set_bms`, `Sup_HUM_Max_bms`, `Sup_HUM_Min_bms`,
+   `DB_HUM_SET_bms` ve `HUMContTypeSel_bms` satirlari listeye eklenir; tikli
+   degilse bu 5 satir silinir. Kademe sayisindan bagimsiz bir secimdir, fakat
+   kademe 0 ise blokun hicbir satiri (bu 5 dahil) listeye girmez.
+10. **10. Cikti** – cihaz adi (örn. `AHU-01`) ve cikti klasörü.
+11. **EXCEL LISTELERINI OLUSTUR** butonuna bas.
 
 Cikti: `AHU-01_Modbus_Reg_List.xlsx` ve `AHU-01_BACnet_Reg_List.xlsx`
 
@@ -109,6 +114,10 @@ Islem Kaydi alaninin tekerlegi kendi metnini kaydirir.
   kademe 0 ise grubun genel satirlari da silinir. Nemlendiricide ayni kural
   sayiya gore isler: 2 secilirse 3-8 kademelerinin 30 satiri, 0 secilirse
   `Hum_Mod_Sel` blogunun 53 satirinin tamamı silinir.
+- **Nem kontrolu** tiki kaldirilirsa `HUM_Set_bms`, `Sup_HUM_Max_bms`,
+  `Sup_HUM_Min_bms`, `DB_HUM_SET_bms`, `HUMContTypeSel_bms` satirlari silinir
+  (islem kaydinda "Nem kontrolu - nem kontrolu secilmedi"). Kademe 0 ise bu
+  5 satir zaten kademe kuraliyla silinir; tik tek basina satirlari geri getirmez.
 - Blok tiklari (SAF / EAF / RunAround) kaldirilirsa o blogun tum satirlari silinir;
   blok secili degilse transmitter tiki tek basina hicbir satir geri getirmez.
 - Pop-up'ta tik kaldirilan filtre alarmi satiri silinir; `Alarm_Reset` her zaman
@@ -122,7 +131,7 @@ Islem Kaydi alaninin tekerlegi kendi metnini kaydirir.
   satir "Rotor - oransal satirlar (on/off secildi)" olarak listelenir.
 - Sabit satirlar her zaman korunur: AHU start/stop, `AHUStart\VANTDOORSW`
   (vantilator kapak sensoru), batarya, `Air_FlowFan1/2`
-  havalandirma satirlari, genel alarm satirlari, `BmsTemp_Hum`, `Hum_Mod_Sel`.
+  havalandirma satirlari, genel alarm satirlari, `BmsTemp_Hum`.
 - `AHUStart\ASPDOORSW` (aspirator kapak sensoru) egzoz fani `Yok` secildiginde
   silinir; islem kaydinda "Fan kapak sensoru - aspirator secilmedi" olarak listelenir.
 
@@ -222,6 +231,22 @@ Kademe sayisini asan indeksli satirlar "Nemlendirici kademe sayısı #N", sayi 0
 iken genel satirlar "Nemlendirici kademe sayısı - genel satirlar" basligiyla
 silinir. Standart listeye `Hum_Mod_Sel\HumModeSel9.Start` gibi yeni bir kademe
 satiri eklersen 9. kademe kutuda kendiliginden belirir.
+
+## Nem kontrolu satirlari (standart listeden otomatik)
+
+`Hum_Mod_Sel` blogunun 5 nem set ayar satiri ayri **Nem Kontrolu** adiminda
+tik ile secilir:
+
+| Token | Aciklama |
+|---|---|
+| `HUM_Set_bms` | BMS nem set degeri |
+| `Sup_HUM_Max_bms` | Ufleme nem ust siniri |
+| `Sup_HUM_Min_bms` | Ufleme nem alt siniri |
+| `DB_HUM_SET_bms` | Dehumidification set |
+| `HUMContTypeSel_bms` | Nem kontrol tipi (0=Supply, 1=Return) |
+
+Tik kaldirilirsa 5 satirin tamamı silinir; tikliyse kademe sayisi >= 1 oldugu
+surduce listeye girer.
 
 ## Rotor modu (standart listeden otomatik)
 

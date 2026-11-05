@@ -2,7 +2,8 @@
 
 Silinen satirlar: secilmeyen marka/adet disindaki fan bloklari (EBM, Danfoss,
 Ziehl-Abegg, WellDrive), tiklanmayan sicaklik-nem-CO2 sensor satirlari,
-adetini asan damper (klape) motoru satirlari ve nemlendirici kademe satirlari.
+adetini asan damper (klape) motoru satirlari, nemlendirici kademe satirlari ve
+nem kontrolu secilmeyince nem set ayar satirlari.
 Sabit kalan satirlar: AHU start, batarya, SAF/EAF mantigi, BmsTemp_Hum ve genel
 alarm satirlari. Secimden bagimsiz
 her zaman silinen satirlar: TempAVG blogu ve MBUnit (BMS iletisim kontrol)
@@ -456,6 +457,23 @@ def _rotor_removed_group(mode: str) -> str:
     return f"{ROTOR_GROUP_PREFIX}oransal satirlar (on/off secildi)"
 
 
+# Nem kontrolu (nemlendirici set ayarlari): bu satirlar yalnizca nem kontrolu
+# "var" secildiginde listeye girer; kademe sayisindan bagimsiz ayri bir secimdir.
+HUM_CTRL_OBJECT = "Hum_Mod_Sel"
+HUM_CTRL_TOKENS: tuple[str, ...] = (
+    "HUM_Set_bms",
+    "Sup_HUM_Max_bms",
+    "Sup_HUM_Min_bms",
+    "DB_HUM_SET_bms",
+    "HUMContTypeSel_bms",
+)
+HUM_CTRL_GROUP_PREFIX = "Nem kontrolu - "
+
+
+def classify_hum_control(obj: str | None, tok: str | None) -> bool:
+    return obj == HUM_CTRL_OBJECT and bool(tok) and tok in HUM_CTRL_TOKENS
+
+
 # Filtre kirlilik alarmlari: "Alarm\<Token>" satirlari, tek tek secilir.
 FILTER_ALARM_OBJECT = "Alarm"
 ALARM_GROUP_PREFIX = "Filtre alarmi - "
@@ -673,6 +691,8 @@ class FilterResult:
     total_valve_rows: int = 0
     kept_rotor_rows: int = 0
     total_rotor_rows: int = 0
+    kept_hum_rows: int = 0
+    total_hum_rows: int = 0
     kept_alarm_rows: int = 0
     total_alarm_rows: int = 0
     removed_by_group: dict[str, int] = field(default_factory=dict)
@@ -739,6 +759,7 @@ def filter_standard_list(
     feature_selection: dict[str, list[str]] | None = None,
     valve_selection: list[str] | None = None,
     rotor_mode: str | None = None,
+    hum_control: bool | None = None,
     alarm_selection: list[str] | None = None,
 ) -> FilterResult:
     cfg = PROTOCOLS[protocol]
@@ -763,8 +784,12 @@ def filter_standard_list(
         damper_groups = {g.key: g for g in detect_damper_groups(ws, name_col, cfg["header_row"])}
 
     stage_groups: dict[str, StageGroup] = {}
-    if stage_selection is not None:
+    # Nem kontrolu secimi de kademe dalindaki genel satirlari etkiledigi icin
+    # gruplar o secim yapildiginda da okunur (kademe kapisi ise None ile devre disi).
+    if stage_selection is not None or hum_control is not None:
         stage_groups = {g.obj: g for g in detect_stage_groups(ws, name_col, cfg["header_row"])}
+
+    hum_enabled = hum_control is not None
 
     feature_enabled = feature_selection is not None
     chosen_features = feature_selection or {}
@@ -797,6 +822,8 @@ def filter_standard_list(
     total_valve_rows = 0
     kept_rotor_rows = 0
     total_rotor_rows = 0
+    kept_hum_rows = 0
+    total_hum_rows = 0
     kept_alarm_rows = 0
     total_alarm_rows = 0
 
@@ -806,6 +833,7 @@ def filter_standard_list(
         damper_found = classify_damper(value) if damper_groups else None
         parsed_obj, parsed_tok = parse_object_token(value)
         stage_group = stage_groups.get(parsed_obj) if stage_groups and parsed_obj else None
+        hum_row = hum_enabled and classify_hum_control(parsed_obj, parsed_tok)
         feature_state = (
             _feature_state(parsed_obj, parsed_tok or "") if feature_enabled and parsed_obj else None
         )
@@ -826,11 +854,22 @@ def filter_standard_list(
             group = f"{damper_groups[key].label} #{unit}"
         elif stage_group is not None:
             unit = _stage_unit(stage_group.obj, parsed_tok)
-            stages = stage_selection.get(stage_group.obj, 0)
+            stages = (
+                stage_selection.get(stage_group.obj, 0)
+                if stage_selection is not None
+                else stage_group.max_stages  # kademe adimi kullanilmadiysa tum kademeler kalir
+            )
             total_stage_rows += 1
             if unit is None:
-                keep = stages >= 1  # mod/durum/kapasite/alarm satirlari
+                keep = stages >= 1
                 group = f"{stage_group.label} - genel satirlar"
+                if keep and hum_row:
+                    total_hum_rows += 1
+                    if hum_control:
+                        kept_hum_rows += 1
+                    else:
+                        keep = False
+                        group = f"{HUM_CTRL_GROUP_PREFIX}nem kontrolu secilmedi"
             else:
                 keep = unit <= stages
                 group = f"{stage_group.label} #{unit}"
@@ -933,6 +972,8 @@ def filter_standard_list(
         total_valve_rows=total_valve_rows,
         kept_rotor_rows=kept_rotor_rows,
         total_rotor_rows=total_rotor_rows,
+        kept_hum_rows=kept_hum_rows,
+        total_hum_rows=total_hum_rows,
         kept_alarm_rows=kept_alarm_rows,
         total_alarm_rows=total_alarm_rows,
         removed_by_group=removed_by_group,
@@ -958,6 +999,7 @@ def generate(
     feature_selection: dict[str, list[str]] | None = None,
     valve_selection: list[str] | None = None,
     rotor_mode: str | None = None,
+    hum_control: bool | None = None,
     alarm_selection: list[str] | None = None,
 ) -> list[FilterResult]:
     prefix = device_prefix.strip() or "Cihaz"
@@ -979,6 +1021,7 @@ def generate(
                 feature_selection=feature_selection,
                 valve_selection=valve_selection,
                 rotor_mode=rotor_mode,
+                hum_control=hum_control,
                 alarm_selection=alarm_selection,
             )
         )

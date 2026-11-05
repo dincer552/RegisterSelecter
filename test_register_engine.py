@@ -1042,3 +1042,75 @@ def test_generate_passes_rotor_mode(tmp_path):
     for res in results:
         assert res.total_rotor_rows == EXPECTED_TOTAL_ROTOR_ROWS
         assert res.kept_rotor_rows == 2
+
+
+# ---------- nem kontrolu (nem set ayar satirlari) secimi ----------
+
+HUM_CTRL_TOKENS = (
+    r"Hum_Mod_Sel\HUM_Set_bms",
+    r"Hum_Mod_Sel\Sup_HUM_Max_bms",
+    r"Hum_Mod_Sel\Sup_HUM_Min_bms",
+    r"Hum_Mod_Sel\DB_HUM_SET_bms",
+    r"Hum_Mod_Sel\HUMContTypeSel_bms",
+)
+HUM_CTRL_OFF_GROUP = "Nem kontrolu - nem kontrolu secilmedi"
+
+
+@pytest.mark.parametrize("protocol", ["modbus", "bacnet"])
+def test_hum_control_off_removes_set_rows(tmp_path, protocol):
+    res = _sensor_run(tmp_path, protocol, None, hum_control=False, out_name=f"humctrl_off_{protocol}.xlsx")
+    assert res.total_hum_rows == len(HUM_CTRL_TOKENS)
+    assert res.kept_hum_rows == 0
+    assert res.removed_rows == FAN_BASELINE_REMOVED + len(HUM_CTRL_TOKENS)
+    assert res.removed_by_group[HUM_CTRL_OFF_GROUP] == len(HUM_CTRL_TOKENS)
+    names = _names(res, protocol)
+    for token in HUM_CTRL_TOKENS:
+        assert token not in names
+    # kademeye bagli satirlar bu secimden etkilenmez
+    assert r"Hum_Mod_Sel\HumModeSel8.Start" in names
+
+
+@pytest.mark.parametrize("protocol", ["modbus", "bacnet"])
+def test_hum_control_on_keeps_set_rows(tmp_path, protocol):
+    res = _sensor_run(tmp_path, protocol, None, hum_control=True, out_name=f"humctrl_on_{protocol}.xlsx")
+    assert res.kept_hum_rows == len(HUM_CTRL_TOKENS)
+    assert res.removed_rows == FAN_BASELINE_REMOVED
+    assert not [key for key in res.removed_by_group if key.startswith("Nem kontrolu")]
+    names = _names(res, protocol)
+    for token in HUM_CTRL_TOKENS:
+        assert token in names
+
+
+def test_hum_control_unused_keeps_all_rows(tmp_path):
+    """Nem kontrolu adimi hic kullanilmazsa (hum_control None) davranis degismez."""
+    res = _sensor_run(tmp_path, "modbus", None)
+    assert res.total_hum_rows == 0
+    for token in HUM_CTRL_TOKENS:
+        assert token in _names(res, "modbus")
+
+
+def test_humidifier_zero_still_removes_whole_block(tmp_path):
+    """Kademe 0 iken nem kontrolu secili olsa bile Hum_Mod_Sel satiri kalmaz."""
+    res = _sensor_run(
+        tmp_path, "modbus", None, stage_selection={}, hum_control=True, out_name="humctrl_zero_stage.xlsx"
+    )
+    assert res.kept_hum_rows == 0
+    assert res.total_hum_rows == 0, "kademe 0 onceligi: nem kapisi hic devreye girmez"
+    assert "Hum_Mod_Sel" not in _names(res, "modbus")
+    assert res.removed_by_group[f"{HUM_GROUP} - genel satirlar"] == 13  # kademe 0 once kalir
+
+
+def test_generate_passes_hum_control(tmp_path):
+    results = generate(
+        data_dir=DATA_DIR,
+        output_dir=tmp_path,
+        device_prefix="AHU-11",
+        supply_brand="ebm",
+        supply_count=1,
+        exhaust_brand="ebm",
+        exhaust_count=1,
+        hum_control=False,
+    )
+    for res in results:
+        assert res.total_hum_rows == len(HUM_CTRL_TOKENS)
+        assert res.kept_hum_rows == 0
