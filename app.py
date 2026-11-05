@@ -21,12 +21,15 @@ from register_engine import (
     FilterAlarm,
     SensorGroup,
     StageGroup,
+    VALVE_GROUP_PREFIX,
+    ValveGroup,
     generate,
     list_damper_groups,
     list_feature_groups,
     list_filter_alarms,
     list_sensor_groups,
     list_stage_groups,
+    list_valve_groups,
 )
 from version import __version__
 
@@ -113,6 +116,7 @@ class App(tk.Tk):
         self._build_stage_section(body)
         self._build_feature_section(body)
         self._build_alarm_section(body)
+        self._build_valve_section(body)
         self._build_output_section(body)
         self._load_config()
 
@@ -551,9 +555,72 @@ class App(tk.Tk):
     def _alarm_selection(self) -> list[str]:
         return [alarm.token for alarm in self.alarm_alarms if self.alarm_vars[alarm.token].get()]
 
-    # ---------- section 7: output ----------
+    # ---------- section 7: su vanalari (CV / HV) ----------
+    def _build_valve_section(self, parent) -> None:
+        sec = tk.LabelFrame(parent, text=" 7. Su Vanalari (CV / HV) ", bg="white", font=("Segoe UI", 11, "bold"), labelanchor="nw")
+        sec.pack(fill="x", padx=2, pady=6)
+
+        self.valve_vars: dict[str, tk.BooleanVar] = {}
+        self.valve_checks: dict[str, tk.Checkbutton] = {}
+        self.valve_pack_opts: dict[str, dict] = {}
+        self.valve_groups: list[ValveGroup] = []
+        try:
+            self.valve_groups = list_valve_groups(resource_path("data"))
+        except Exception as exc:  # noqa: BLE001
+            tk.Label(sec, text=f"Standart liste okunamadi: {exc}", bg="white", fg=RED).pack(anchor="w", padx=10, pady=8)
+            return
+
+        tk.Label(
+            sec,
+            text="Her vananin kendi satirlari (Pozisyon, Geri bildirim, Mode Select, Manuel Referans) "
+            "tikle eklenir veya silinir. 2. vana kutusu yalnizca 1. vana secildiginde gorunur olur.",
+            bg="white", fg="#4b5563", font=("Segoe UI", 9), wraplength=760, justify="left", anchor="w",
+        ).pack(fill="x", padx=10, pady=(6, 2))
+
+        box = tk.Frame(sec, bg="white")
+        box.pack(fill="x", padx=12, pady=(2, 10))
+        for group in self.valve_groups:
+            var = tk.BooleanVar(value=False)
+            self.valve_vars[group.key] = var
+            opts = {"anchor": "w", "padx": 26 if group.parent else 0, "pady": 2}
+            check = tk.Checkbutton(
+                box,
+                text=f"{group.label} ({group.rows} satir)",
+                variable=var,
+                bg="white",
+                font=("Segoe UI", 10, "normal" if group.parent else "bold"),
+                activebackground="white",
+                selectcolor="white",
+            )
+            check.pack(**opts)
+            self.valve_checks[group.key] = check
+            self.valve_pack_opts[group.key] = opts
+            if not group.parent:
+                var.trace_add("write", lambda *_a, g=group: self._sync_valve_children(g))
+
+        for group in self.valve_groups:
+            if not group.parent:
+                self._sync_valve_children(group)
+
+    def _sync_valve_children(self, parent_group: ValveGroup) -> None:
+        """2. vana kutusunu 1. vana secimine gore goruntule/gizle."""
+        shown = self.valve_vars[parent_group.key].get()
+        for group in self.valve_groups:
+            if group.parent != parent_group.key:
+                continue
+            check = self.valve_checks[group.key]
+            if shown:
+                check.pack(**self.valve_pack_opts[group.key])
+            else:
+                check.pack_forget()
+                self.valve_vars[group.key].set(False)
+
+    def _valve_selection(self) -> list[str]:
+        return [group.key for group in self.valve_groups if self.valve_vars[group.key].get()]
+
+    # ---------- section 8: output ----------
     def _build_output_section(self, parent) -> None:
-        sec = tk.LabelFrame(parent, text=" 7. Cikti ", bg="white", font=("Segoe UI", 11, "bold"), labelanchor="nw")
+        sec = tk.LabelFrame(parent, text=" 8. Cikti ", bg="white", font=("Segoe UI", 11, "bold"), labelanchor="nw")
         sec.pack(fill="x", padx=2, pady=6)
 
         self.device_var = tk.StringVar(value="AHU-01")
@@ -622,6 +689,7 @@ class App(tk.Tk):
         dampers = self._damper_selection()
         stages = self._stage_selection()
         features = self._feature_selection()
+        valves = self._valve_selection()
         alarms = self._alarm_selection()
         any_sensor = any(sensors.values()) if sensors else True
         any_damper = any(dampers.values()) if dampers else True
@@ -654,6 +722,7 @@ class App(tk.Tk):
                 damper_selection=dampers,
                 stage_selection=stages,
                 feature_selection=features,
+                valve_selection=valves,
                 alarm_selection=alarms,
             )
         except Exception as exc:  # noqa: BLE001
@@ -666,6 +735,7 @@ class App(tk.Tk):
                     f"damper {res.kept_damper_rows}/{res.total_damper_rows}, "
                     f"kademe {res.kept_stage_rows}/{res.total_stage_rows}, "
                     f"blok {res.kept_feature_rows}/{res.total_feature_rows}, "
+                    f"vana {res.kept_valve_rows}/{res.total_valve_rows}, "
                     f"filtre alarmi {res.kept_alarm_rows}/{res.total_alarm_rows} satir, "
                     f"toplam {res.removed_rows} satir silindi -> {res.output}"
                 )
@@ -676,6 +746,7 @@ class App(tk.Tk):
                 ("Silinen damper motorlari", "damper"),
                 ("Silinen kademe satirlari", "stage"),
                 ("Silinen blok satirlari", "feature"),
+                ("Secilmeyen vana satirlari", "valve"),
                 ("Secilmeyen filtre alarmlari", "alarm"),
                 ("Her zaman cikarilan gruplar", "dropped"),
                 ("Silinen fan bloklari", "fan"),
@@ -697,7 +768,8 @@ class App(tk.Tk):
         brand_labels = {b["label"] for b in BRANDS.values()}
         dropped_labels = tuple(ALWAYS_DROPPED_OBJECTS.values())
         buckets: dict[str, dict[str, int]] = {
-            "sensor": {}, "damper": {}, "stage": {}, "feature": {}, "alarm": {}, "dropped": {}, "fan": {}
+            "sensor": {}, "damper": {}, "stage": {}, "feature": {},
+            "valve": {}, "alarm": {}, "dropped": {}, "fan": {}
         }
         for res in results:
             for name, count in res.removed_by_group.items():
@@ -707,6 +779,8 @@ class App(tk.Tk):
                     kind = "dropped"
                 elif name.startswith(FAN_DOOR_GROUP_PREFIX):
                     kind = "fan"
+                elif name.startswith(VALVE_GROUP_PREFIX):
+                    kind = "valve"
                 elif any(name.startswith(lbl) for lbl in damper_labels):
                     kind = "damper"
                 elif any(name.startswith(lbl) for lbl in sensor_labels):
@@ -924,6 +998,18 @@ class App(tk.Tk):
             for token, var in self.alarm_vars.items():
                 var.set(token in chosen)
             self._refresh_alarm_summary()
+        valves = cfg.get("valves")
+        if valves is not None:
+            chosen = set(valves)
+            for group in self.valve_groups:
+                if group.parent:
+                    continue
+                self.valve_vars[group.key].set(group.key in chosen)
+                self._sync_valve_children(group)
+            # 2. vana tiki, 1. vana kutusunu goruntuleyen senkronizasyondan sonra yuklenir
+            for group in self.valve_groups:
+                if group.parent and self.valve_vars[group.parent].get():
+                    self.valve_vars[group.key].set(group.key in chosen)
 
     def _save_config(self) -> None:
         cfg = {
@@ -937,6 +1023,7 @@ class App(tk.Tk):
             "dampers": self._damper_selection(),
             "stages": self._stage_selection(),
             "features": self._feature_selection(),
+            "valves": self._valve_selection(),
             "alarms": self._alarm_selection(),
         }
         try:

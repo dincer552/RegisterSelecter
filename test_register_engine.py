@@ -6,13 +6,16 @@ from openpyxl import load_workbook
 from register_engine import (
     BRANDS,
     PROTOCOLS,
+    VALVE_GROUP_PREFIX,
     RowClassification,
     classify_damper,
     classify_row,
+    classify_valve,
     detect_damper_groups,
     detect_filter_alarms,
     detect_sensor_groups,
     detect_stage_groups,
+    detect_valve_groups,
     filter_standard_list,
     generate,
     list_damper_groups,
@@ -20,6 +23,7 @@ from register_engine import (
     list_filter_alarms,
     list_sensor_groups,
     list_stage_groups,
+    list_valve_groups,
     parse_object_token,
 )
 
@@ -639,3 +643,116 @@ def test_aspdoorsw_needs_any_exhaust_fan(tmp_path, protocol):
         assert res.removed_rows == (
             (EXPECTED_TOTAL_FAN_ROWS - res.kept_fan_rows) + EXPECTED_TOTAL_TEMPAVG_ROWS + door_rows
         )
+
+
+# ---------- su vanalari: CV1 / CV2 / HV1 / HV2 ----------
+
+# CV1 4 + CV2 1 + HV1 4 + HV2 4 = 13 satir/protokol
+EXPECTED_TOTAL_VALVE_ROWS = 13
+VALVE_ROWS = {
+    "CV1": ("CV_Pos", "CV_Fdb_1", "CVModeSel_BMS", "CV_Man_Ref_BMS"),
+    "CV2": ("CV_Fdb_2",),
+    "HV1": ("HV_Pos", "HV_Fdb_1", "HVModeSel_BMS", "HV_Man_Ref_BMS"),
+    "HV2": ("HV_Pos2", "HV_Fdb_2", "HV2ModeSel_BMS", "HV2_Man_Ref_BMS"),
+}
+
+
+@pytest.mark.parametrize(
+    "obj,tok,expected",
+    [
+        ("TmpControl", "CV_Pos", "CV1"),
+        ("TmpControl", "CV_Fdb_1", "CV1"),
+        ("TmpControl", "CVModeSel_BMS", "CV1"),
+        ("TmpControl", "CV_Man_Ref_BMS", "CV1"),
+        ("TmpControl", "CV_Fdb_2", "CV2"),
+        ("TmpControl", "HV_Pos", "HV1"),
+        ("TmpControl", "HV_Fdb_2", "HV2"),
+        ("TmpControl", "HV_Pos2", "HV2"),
+        ("TmpControl", "HV2ModeSel_BMS", "HV2"),
+        ("TmpControl", "HV2_Man_Ref_BMS", "HV2"),
+        # vana olmayan TmpControl satirlari secime tabi degil
+        ("TmpControl", "Tmp_Set_BMS", None),
+        ("TmpControl", "Cooling_Active", None),
+        ("TmpControl", "Control_Select_BMS", None),
+        ("TmpControl", "CoverMan_Ref_BMS", None),
+        # baska nesneler vana sayilmaz
+        ("SAF", "SAF.ManualReferanceBMS", None),
+        ("AHUStart", "VANTDOORSW", None),
+    ],
+)
+def test_classify_valve(obj, tok, expected):
+    assert classify_valve(obj, tok) == expected
+
+
+@pytest.mark.parametrize("protocol", ["modbus", "bacnet"])
+def test_detect_valve_groups(protocol):
+    cfg = PROTOCOLS[protocol]
+    ws = load_workbook(DATA_DIR / cfg["file"]).active
+    groups = {g.key: g for g in detect_valve_groups(ws, cfg["name_col"], cfg["header_row"])}
+    assert list(groups) == ["CV1", "CV2", "HV1", "HV2"]
+    assert sum(g.rows for g in groups.values()) == EXPECTED_TOTAL_VALVE_ROWS
+    assert groups["CV2"].parent == "CV1" and groups["HV2"].parent == "HV1"
+    assert groups["CV1"].parent is None
+    assert groups["CV1"].label == "Sogutma su vanasi 1 (CV1)"
+    assert groups["HV1"].label == "Isitma su vanasi 1 (HV1)"
+
+
+def test_list_valve_groups_covers_both_protocols():
+    groups = list_valve_groups(DATA_DIR)
+    assert [g.key for g in groups] == ["CV1", "CV2", "HV1", "HV2"]
+    assert {g.rows for g in groups} == {1, 4}
+
+
+def test_valve_selection_keeps_only_chosen_valves(tmp_path):
+    chosen = ["CV1", "HV1", "HV2"]
+    res = _sensor_run(tmp_path, "modbus", None, valve_selection=chosen, out_name="valve.xlsx")
+    assert res.total_valve_rows == EXPECTED_TOTAL_VALVE_ROWS
+    assert res.kept_valve_rows == 12
+    names = _names(res, "modbus")
+    for key, tokens in VALVE_ROWS.items():
+        for token in tokens:
+            present = rf"TmpControl\{token}" in names
+            assert present == (key in chosen), (key, token, present)
+    assert res.removed_by_group[f"{VALVE_GROUP_PREFIX}Sogutma su vanasi 2 (CV2)"] == 1
+
+
+def test_valve_step_unused_keeps_every_valve_row(tmp_path):
+    """vane adimi kullanilmazsa (valve_selection=None) hicbir vana satiri silinmez."""
+    res = _sensor_run(tmp_path, "modbus", None, out_name="valve_off.xlsx")
+    assert res.total_valve_rows == 0
+    names = _names(res, "modbus")
+    for tokens in VALVE_ROWS.values():
+        for token in tokens:
+            assert rf"TmpControl\{token}" in names
+
+
+def test_valve_none_selection_removes_all_valve_rows(tmp_path):
+    baseline = _sensor_run(tmp_path, "modbus", None, out_name="valve_base.xlsx")
+    none_res = _sensor_run(tmp_path, "modbus", None, valve_selection=[], out_name="valve_none.xlsx")
+    assert none_res.kept_valve_rows == 0
+    assert none_res.removed_rows - baseline.removed_rows == EXPECTED_TOTAL_VALVE_ROWS
+    names = _names(none_res, "modbus")
+    for tokens in VALVE_ROWS.values():
+        for token in tokens:
+            assert rf"TmpControl\{token}" not in names
+    # sicaklik setpoint gibi sabit TmpControl satirlari korunur
+    assert r"TmpControl\Tmp_Set_BMS" in names
+
+
+def test_generate_passes_valve_selection(tmp_path):
+    results = generate(
+        data_dir=DATA_DIR,
+        output_dir=tmp_path,
+        device_prefix="AHU-09",
+        supply_brand="ebm",
+        supply_count=1,
+        exhaust_brand="ebm",
+        exhaust_count=1,
+        valve_selection=["HV1", "HV2"],
+    )
+    for res in results:
+        protocol = "modbus" if res.protocol == "MODBUS" else "bacnet"
+        assert res.kept_valve_rows == 8
+        names = _names(res, protocol)
+        assert "CV_" not in names and "CVModeSel" not in names
+        assert r"TmpControl\HV2_Man_Ref_BMS" in names

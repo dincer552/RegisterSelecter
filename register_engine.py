@@ -306,6 +306,73 @@ def list_feature_groups(data_dir: Path) -> list[FeatureGroup]:
     return [merged[obj] for obj in FEATURE_GROUPS if obj in merged]
 
 
+# Su vanalari: TmpControl altindaki CV (sogutma) ve HV (isitma) satirlari.
+# Her vana numarasi ayri secilir; 2. vana yalnizca 1. vana seciliyse anlam kazanir.
+VALVE_OBJECT = "TmpControl"
+VALVE_KIND_LABELS = {"CV": "Sogutma su vanasi", "HV": "Isitma su vanasi"}
+VALVE_GROUP_PREFIX = "Vana satirlari - "
+# CV_Pos / CV_Fdb_2 / CVModeSel_BMS / HV2_Man_Ref_BMS gibi kalibindaki tokenlar.
+_VALVE_TOKEN_RE = re.compile(r"^(?P<kind>CV|HV)(?P<first>\d)?_?(?P<what>Pos|Fdb|Man_Ref|ModeSel)_?(?P<last>\d)?$")
+
+
+@dataclass
+class ValveGroup:
+    key: str  # "CV1"
+    kind: str  # "CV" | "HV"
+    unit: int
+    label: str
+    parent: str | None  # 2. vana, 1. vana secilince gorunur olur
+    rows: int
+
+
+def classify_valve(obj: str | None, tok: str | None) -> str | None:
+    """Vana satiri ise 'CV1' / 'HV2' gibi vana anahtari dondurur."""
+    if obj != VALVE_OBJECT or not tok:
+        return None
+    match = _VALVE_TOKEN_RE.match(re.sub(r"_BMS$", "", tok))
+    if match is None:
+        return None
+    return f"{match['kind']}{int(match['first'] or match['last'] or 1)}"
+
+
+def _valve_group(key: str, rows: int) -> ValveGroup:
+    kind, unit = key[:2], int(key[2:])
+    return ValveGroup(
+        key=key,
+        kind=kind,
+        unit=unit,
+        label=f"{VALVE_KIND_LABELS[kind]} {unit} ({key})",
+        parent=None if unit == 1 else f"{kind}1",
+        rows=rows,
+    )
+
+
+def _valve_sort_key(key: str) -> tuple[str, int]:
+    return key[:2], int(key[2:])
+
+
+def detect_valve_groups(ws, name_col: str, header_row: int) -> list[ValveGroup]:
+    counts: dict[str, int] = {}
+    for row in range(header_row + 1, ws.max_row + 1):
+        obj, tok = parse_object_token(ws[f"{name_col}{row}"].value)
+        key = classify_valve(obj, tok)
+        if key:
+            counts[key] = counts.get(key, 0) + 1
+    return [_valve_group(key, counts[key]) for key in sorted(counts, key=_valve_sort_key)]
+
+
+def list_valve_groups(data_dir: Path) -> list[ValveGroup]:
+    """Iki protokoldeki vana gruplarinin birlesimi (en genis satir sayisi alinir)."""
+    merged: dict[str, ValveGroup] = {}
+    for cfg in PROTOCOLS.values():
+        ws = load_workbook(data_dir / cfg["file"]).active
+        for group in detect_valve_groups(ws, cfg["name_col"], cfg["header_row"]):
+            cur = merged.get(group.key)
+            if cur is None or group.rows > cur.rows:
+                merged[group.key] = group
+    return [merged[key] for key in sorted(merged, key=_valve_sort_key)]
+
+
 # Filtre kirlilik alarmlari: "Alarm\<Token>" satirlari, tek tek secilir.
 FILTER_ALARM_OBJECT = "Alarm"
 ALARM_GROUP_PREFIX = "Filtre alarmi - "
@@ -516,6 +583,8 @@ class FilterResult:
     total_stage_rows: int = 0
     kept_feature_rows: int = 0
     total_feature_rows: int = 0
+    kept_valve_rows: int = 0
+    total_valve_rows: int = 0
     kept_alarm_rows: int = 0
     total_alarm_rows: int = 0
     removed_by_group: dict[str, int] = field(default_factory=dict)
@@ -580,6 +649,7 @@ def filter_standard_list(
     damper_selection: dict[str, int] | None = None,
     stage_selection: dict[str, int] | None = None,
     feature_selection: dict[str, list[str]] | None = None,
+    valve_selection: list[str] | None = None,
     alarm_selection: list[str] | None = None,
 ) -> FilterResult:
     cfg = PROTOCOLS[protocol]
@@ -608,6 +678,12 @@ def filter_standard_list(
     feature_enabled = feature_selection is not None
     chosen_features = feature_selection or {}
 
+    valve_enabled = valve_selection is not None
+    chosen_valves = set(valve_selection or [])
+    valve_labels: dict[str, str] = {}
+    if valve_enabled:
+        valve_labels = {g.key: g.label for g in detect_valve_groups(ws, name_col, cfg["header_row"])}
+
     alarm_enabled = alarm_selection is not None
     chosen_alarms = set(alarm_selection or [])
     alarm_labels: dict[str, str] = {}
@@ -626,6 +702,8 @@ def filter_standard_list(
     total_stage_rows = 0
     kept_feature_rows = 0
     total_feature_rows = 0
+    kept_valve_rows = 0
+    total_valve_rows = 0
     kept_alarm_rows = 0
     total_alarm_rows = 0
 
@@ -678,6 +756,12 @@ def filter_standard_list(
             if keep:
                 kept_feature_rows += 1
                 continue
+        elif valve_enabled and (valve_key := classify_valve(parsed_obj, parsed_tok)):
+            total_valve_rows += 1
+            if valve_key in chosen_valves:
+                kept_valve_rows += 1
+                continue
+            group = f"{VALVE_GROUP_PREFIX}{valve_labels.get(valve_key, valve_key)}"
         elif parsed_obj in ALWAYS_DROPPED_OBJECTS:
             group = f"{ALWAYS_DROPPED_OBJECTS[parsed_obj]} - kullanilmiyor"
         elif parsed_obj in ALWAYS_KEPT_OBJECTS:
@@ -735,6 +819,8 @@ def filter_standard_list(
         total_stage_rows=total_stage_rows,
         kept_feature_rows=kept_feature_rows,
         total_feature_rows=total_feature_rows,
+        kept_valve_rows=kept_valve_rows,
+        total_valve_rows=total_valve_rows,
         kept_alarm_rows=kept_alarm_rows,
         total_alarm_rows=total_alarm_rows,
         removed_by_group=removed_by_group,
@@ -758,6 +844,7 @@ def generate(
     damper_selection: dict[str, int] | None = None,
     stage_selection: dict[str, int] | None = None,
     feature_selection: dict[str, list[str]] | None = None,
+    valve_selection: list[str] | None = None,
     alarm_selection: list[str] | None = None,
 ) -> list[FilterResult]:
     prefix = device_prefix.strip() or "Cihaz"
@@ -777,6 +864,7 @@ def generate(
                 damper_selection=damper_selection,
                 stage_selection=stage_selection,
                 feature_selection=feature_selection,
+                valve_selection=valve_selection,
                 alarm_selection=alarm_selection,
             )
         )

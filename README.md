@@ -45,8 +45,17 @@ cihaza özel Excel listeleri üreten Windows masaüstü programi.
    icinde de guncellenir. Pop-up acikken fare tekerlegi pop-up listesini kaydirdir.
    - `Alarm_Reset\Alarm_Reset` satiri **her zaman** listeye eklenir (tik ile degismez).
    - `TempAVG` grubu (ortalama oda sicakligi) **hicbir sekilde** listeye eklenmez.
-7. **7. Cikti** – cihaz adi (örn. `AHU-01`) ve cikti klasörü.
-8. **EXCEL LISTELERINI OLUSTUR** butonuna bas.
+7. **7. Su Vanalari (CV / HV)** – her vananin kendi satirlari tik kutusu ile
+   secilir: tikli vananin pozisyon (`CV_Pos` / `HV_Pos`), geri bildirim
+   (`CV_Fdb_1` / `HV_Fdb_1`), `Mode Select` ve `Manuel Referans` satirlari listeye
+   girer; tik kaldirilan vananin satirlari silinir.
+   - **`CV2` ve `HV2` ilk basta gorunmez.** `CV1` tiklaninca `CV2` altinda acilir,
+     `HV1` tiklaninca `HV2` acilir. Ana tik kaldirilirsa alt vana otomatik
+     kapanir ve tekrar gizlenir.
+   - Vana satirlari da standart Excel'den otomatik algilanir; standart listeye
+     `TmpControl\CV2_Pos` gibi yeni bir vana satiri eklersen programda belirir.
+8. **8. Cikti** – cihaz adi (örn. `AHU-01`) ve cikti klasörü.
+9. **EXCEL LISTELERINI OLUSTUR** butonuna bas.
 
 Cikti: `AHU-01_Modbus_Reg_List.xlsx` ve `AHU-01_BACnet_Reg_List.xlsx`
 
@@ -70,6 +79,9 @@ Islem Kaydi alaninin tekerlegi kendi metnini kaydirir.
   blok secili degilse transmitter tiki tek basina hicbir satir geri getirmez.
 - Pop-up'ta tik kaldirilan filtre alarmi satiri silinir; `Alarm_Reset` her zaman
   kalir, `TempAVG` grubu her zaman silinir (secimden bagimsiz).
+- Tik kaldirilan su vanasinin (CV1/CV2/HV1/HV2) tum satirlari silinir. `CV2`/`HV2`
+  kutusu ana vana secilmedigi surece gorunmez ve secilemez; ana tik kaldirilirsa
+  alt vana da otomatik kapanir. Islem kaydinda "Vana satirlari - ..." olarak listelenir.
 - Sabit satirlar her zaman korunur: AHU start/stop, `AHUStart\VANTDOORSW`
   (vantilator kapak sensoru), batarya, `Air_FlowFan1/2`
   havalandirma satirlari, genel alarm satirlari, `BmsTemp_Hum`, `Hum_Mod_Sel`.
@@ -131,6 +143,23 @@ Toplam **19 alarm satiri/protokol**. Ayrica:
 - `Alarm_Reset\Alarm_Reset` (1 satir) **sabit** kalir, pop-up'ta listelenmez.
 - `TempAVG` grubu (5 satir) secimden bagimsiz **her zaman silinir**.
 - Standart listeye yeni `Alarm\...` satiri eklersen pop-up'ta otomatik belirir.
+
+## Su vanalari (standart listeden otomatik)
+
+`TmpControl\<Token>` satirlari taranir; token kalibi `CV`/`HV` + opsiyonel vana
+ numarasi + `Pos` / `Fdb` / `Man_Ref` / `ModeSel` (BACnet listesindeki `=62870`
+ gibi adres eki algilamayi engellemez).
+
+| Vana | Etiket | Satirlar | UI |
+|---|---|---|---|
+| `CV1` | Sogutma su vanasi 1 | 4 (`CV_Pos`, `CV_Fdb_1`, `CVModeSel_BMS`, `CV_Man_Ref_BMS`) | ust seviye tik |
+| `CV2` | Sogutma su vanasi 2 | 1 (`CV_Fdb_2`) | **yalnizca `CV1` secilince gorunur** |
+| `HV1` | Isitma su vanasi 1 | 4 (`HV_Pos`, `HV_Fdb_1`, `HVModeSel_BMS`, `HV_Man_Ref_BMS`) | ust seviye tik |
+| `HV2` | Isitma su vanasi 2 | 4 (`HV_Pos2`, `HV_Fdb_2`, `HV2ModeSel_BMS`, `HV2_Man_Ref_BMS`) | **yalnizca `HV1` secilince gorunur** |
+
+Toplam **13 satir/protokol**. `CV2` su an sadece geri bildirim satirina sahip
+(standart listede `CV2ModeSel` / `CV2_Man_Ref` / `CV_Pos2` yok); bu satirlar
+standart listeye eklendiginde 2. vana kutusunda otomatik gorunur.
 
 ## Marka bloklari (standart listedeki karsiliklari)
 
