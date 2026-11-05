@@ -321,8 +321,9 @@ class App(tk.Tk):
             head,
             text="Her tarafa kac damper motoru baglanacagini sec. Sayilan motorlardan fazlasi ve "
             "secilmeyen tarafin pozisyon/feedback/alarm satirlari silinir. "
-            "Karisim motoru 0 ise DamperCont satirlarinin hepsi silinir; "
-            "CO2_Set_BMS ve DmpContTypeSel ayrica en az bir CO2 sensoru secilmesini ister.",
+            "Karisim motoru 0 ise DamperCont satirlarinin hepsi, bypass motoru 0 ise "
+            "BypassDmpCont satirlarinin hepsi silinir; CO2_Set_BMS ve DmpContTypeSel "
+            "ayrica en az bir CO2 sensoru secilmesini ister.",
             bg="white", fg="#4b5563", font=("Segoe UI", 9), wraplength=760, justify="left", anchor="w",
         ).pack(side="left")
 

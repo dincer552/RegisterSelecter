@@ -354,6 +354,15 @@ DMP_PARAM_TOKENS = (r"DamperCont\DmpAutoManSel_BMS", r"DamperCont\DmpMinRef_BMS"
 EXPECTED_DMP_CO2_ROWS = 2
 DMP_CO2_GROUP = "Damper parametreleri - CO2 sensoru secilmedi"
 DMP_CO2_TOKENS = (r"DamperCont\CO2_Set_BMS", r"DamperCont\DmpContTypeSel")
+# By-pass motoru secilmediğinde silinen BypassDmpCont satırları
+EXPECTED_BYPASS_PARAM_ROWS = 4
+BYPASS_PARAM_GROUP = "Damper parametreleri - By-pass damper motoru secilmedi"
+BYPASS_PARAM_TOKENS = (
+    r"BypassDmpCont\BypassModeSelLocal_BMS",
+    r"BypassDmpCont\BypassManSetLocal_BMS",
+    r"BypassDmpCont\BypassSetLocal_BMS",
+    r"BypassDmpCont\BypassRecMod",
+)
 
 
 @pytest.mark.parametrize(
@@ -405,16 +414,21 @@ def test_damper_zero_selection_removes_whole_block(tmp_path):
     res = _sensor_run(tmp_path, "modbus", None, damper_selection={}, out_name="none.xlsx")
     assert res.kept_damper_rows == 0
     assert res.removed_rows == (
-        FAN_BASELINE_REMOVED + EXPECTED_TOTAL_DAMPER_ROWS + EXPECTED_DMP_PARAM_ROWS + EXPECTED_DMP_CO2_ROWS
+        FAN_BASELINE_REMOVED
+        + EXPECTED_TOTAL_DAMPER_ROWS
+        + EXPECTED_DMP_PARAM_ROWS
+        + EXPECTED_DMP_CO2_ROWS
+        + EXPECTED_BYPASS_PARAM_ROWS
     )
     names = _names(res, "modbus")
     assert "DmpMB_Siemens" not in names
-    # karisim motoru 0 -> 5 DamperCont parametre satirinin hepsi silinir
+    # karisim motoru 0 -> 5 DamperCont, bypass motoru 0 -> 4 BypassDmpCont satiri silinir
     for token in DMP_PARAM_TOKENS + DMP_CO2_TOKENS:
         assert token not in names
+    for token in BYPASS_PARAM_TOKENS:
+        assert token not in names
     assert res.removed_by_group[DMP_PARAM_GROUP] == EXPECTED_DMP_PARAM_ROWS + EXPECTED_DMP_CO2_ROWS
-    # BypassDmpCont satirlari karisim damperinden bagimsiz, her zaman kalir
-    assert r"BypassDmpCont\BypassRecMod" in names
+    assert res.removed_by_group[BYPASS_PARAM_GROUP] == EXPECTED_BYPASS_PARAM_ROWS
 
 
 def test_damper_unit_counts_per_side(tmp_path):
@@ -478,13 +492,35 @@ def test_damper_co2_param_rows_need_co2_sensor(tmp_path, protocol):
     assert DMP_PARAM_GROUP not in without_co2.removed_by_group
 
 
+@pytest.mark.parametrize("protocol", ["modbus", "bacnet"])
+def test_bypass_param_rows_follow_bypass_count(tmp_path, protocol):
+    """BypassDmpCont satirlari yalnizca by-pass motoru adedi >= 1 iken kalir."""
+    kept = _sensor_run(tmp_path, protocol, None, damper_selection={"ByPass|Siemens": 2},
+                       out_name=f"byp1_{protocol}.xlsx")
+    names = _names(kept, protocol)
+    for token in BYPASS_PARAM_TOKENS:
+        assert token in names
+    assert BYPASS_PARAM_GROUP not in kept.removed_by_group
+
+    dropped = _sensor_run(tmp_path, protocol, None, damper_selection={"ByPass|Siemens": 0},
+                          out_name=f"byp0_{protocol}.xlsx")
+    names = _names(dropped, protocol)
+    for token in BYPASS_PARAM_TOKENS:
+        assert token not in names
+    assert dropped.removed_by_group[BYPASS_PARAM_GROUP] == EXPECTED_BYPASS_PARAM_ROWS
+    # by-pass satirlari karisim motorundan bagimsizdir
+    for token in DMP_PARAM_TOKENS + DMP_CO2_TOKENS:
+        assert token not in names
+
+
 def test_damper_param_rows_untouched_without_damper_step(tmp_path):
     """Damper adimi hic kullanilmazsa (selection None) davranis degismez."""
     res = _sensor_run(tmp_path, "modbus", None)
     names = _names(res, "modbus")
-    for token in DMP_PARAM_TOKENS + DMP_CO2_TOKENS:
+    for token in DMP_PARAM_TOKENS + DMP_CO2_TOKENS + BYPASS_PARAM_TOKENS:
         assert token in names
     assert DMP_PARAM_GROUP not in res.removed_by_group
+    assert BYPASS_PARAM_GROUP not in res.removed_by_group
 
 
 def test_generate_with_damper_selection(tmp_path):

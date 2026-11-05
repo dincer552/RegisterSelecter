@@ -27,6 +27,9 @@ cihaza özel Excel listeleri üreten Windows masaüstü programi.
    `DmpContTypeSel`) silinir. `CO2_Set_BMS` ve `DmpContTypeSel` icin ek kosul:
    **en az bir CO2 sensoru secili** olmalidir; CO2 secilmezse karisim motoru olsa
    bile bu iki satir listeden cikar.
+   **By-pass motoru 0 ise** `BypassDmpCont` satirlarinin hepsi
+   (`BypassModeSelLocal_BMS`, `BypassManSetLocal_BMS`, `BypassSetLocal_BMS`,
+   `BypassRecMod`) silinir; bu 4 satir karisim motorundan bagimsizdir.
 4. **4. Isitici / DX Sogutucu Kademeleri** – kademe sayisi girilir (0 = Yok):
    - `DX sogutucu kademe sayisi` 0-10: DxN Alarm + DXN Defrost satirlari sayiya
      gore silinir. `DX_mode`, `DX_Status1`, `CapValuee`, `CapValuee1` genel
@@ -84,7 +87,9 @@ Islem Kaydi alaninin tekerlegi kendi metnini kaydirir.
   "Damper parametreleri - Karışım hava damper motoru secilmedi").
   `CO2_Set_BMS` + `DmpContTypeSel` ayrica en az bir CO2 sensoru ister; karisim
   motoru var ama CO2 secilmemisse bu iki satir "Damper parametreleri - CO2
-  sensoru secilmedi" olarak silinir. `BypassDmpCont\...` satirlari her zaman kalir.
+  sensoru secilmedi" olarak silinir. `BypassDmpCont`'in 4 satiri by-pass motorunun
+  varligina baglidir: by-pass 0 ise "Damper parametreleri - By-pass damper motoru
+  secilmedi" olarak silinir.
 - Isitici/DX kademelerinde secilen kademe sayisini asan satirlar silinir;
   kademe 0 ise grubun genel satirlari da silinir.
 - Blok tiklari (SAF / EAF / RunAround) kaldirilirsa o blogun tum satirlari silinir;
@@ -131,7 +136,9 @@ tarafin kendisi 1 `Dmp_Pos` satiri -> toplam **102 satir/protokol**.
 Ek olarak `DamperCont`'in 5 parametre satiri karisim motoruna baglidir:
 `DmpAutoManSel_BMS`, `DmpMinRef_BMS`, `DmpManRef_BMS` yalnizca karisim motoru
 adedi >= 1 iken kalir; `CO2_Set_BMS` ve `DmpContTypeSel` ayni kosula ek olarak
-en az bir CO2 sensoru secilmesini ister.
+en az bir CO2 sensoru secilmesini ister. `BypassDmpCont`'in 4 satiri
+(`BypassModeSelLocal_BMS`, `BypassManSetLocal_BMS`, `BypassSetLocal_BMS`,
+`BypassRecMod`) yalnizca by-pass motoru adedi >= 1 iken kalir.
 
 ## Blok secimleri (SAF / EAF / RunAround)
 

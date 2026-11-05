@@ -3,9 +3,10 @@
 Silinen satirlar: secilmeyen marka/adet disindaki fan bloklari (EBM, Danfoss,
 Ziehl-Abegg, WellDrive), tiklanmayan sicaklik-nem-CO2 sensor satirlari ve
 adetini asan damper (klape) motoru satirlari. Sabit kalan satirlar: AHU start,
-batarya, SAF/EAF mantigi, BmsTemp_Hum, DamperCont/BypassDmpCont ve genel alarm
-satirlari. Secimden bagimsiz her zaman silinen satirlar: TempAVG blogu ve
-MBUnit (BMS iletisim kontrol) satirlari.
+batarya, SAF/EAF mantigi, BmsTemp_Hum ve genel alarm satirlari. Secimden bagimsiz
+her zaman silinen satirlar: TempAVG blogu ve MBUnit (BMS iletisim kontrol)
+satirlari. DamperCont / BypassDmpCont satirlari sirasiyla karisim ve by-pass
+motorunun varligina baglidir.
 """
 
 from __future__ import annotations
@@ -131,19 +132,30 @@ class DamperGroup:
     max_units: int
 
 
-# DamperCont\... parametre satirlari bir damper tarafinin varligina baglidir:
-# ilgili tarafin motor sayisi 0 ise bu satirlar listeden silinir.
-DAMPER_PARAM_OBJECT = "DamperCont"
-DAMPER_PARAM_TOKENS: dict[str, str] = {
-    "DmpAutoManSel_BMS": "Mix",
-    "DmpMinRef_BMS": "Mix",
-    "DmpManRef_BMS": "Mix",
-    "CO2_Set_BMS": "Mix",
-    "DmpContTypeSel": "Mix",
+# Damper/bypass parametre nesnelerinin satirlari bir damper tarafinin varligina
+# baglidir: ilgili tarafin motor sayisi 0 ise bu satirlar listeden silinir.
+DAMPER_PARAM_TOKENS: dict[str, dict[str, str]] = {
+    "DamperCont": {
+        "DmpAutoManSel_BMS": "Mix",
+        "DmpMinRef_BMS": "Mix",
+        "DmpManRef_BMS": "Mix",
+        "CO2_Set_BMS": "Mix",
+        "DmpContTypeSel": "Mix",
+    },
+    "BypassDmpCont": {
+        "BypassModeSelLocal_BMS": "ByPass",
+        "BypassManSetLocal_BMS": "ByPass",
+        "BypassSetLocal_BMS": "ByPass",
+        "BypassRecMod": "ByPass",
+    },
 }
 # Bu iki satir karisim motorunun yaninda en az bir CO2 sensoru secilmesini de ister.
 DAMPER_PARAM_CO2_TOKENS = frozenset({"CO2_Set_BMS", "DmpContTypeSel"})
 DAMPER_PARAM_GROUP_PREFIX = "Damper parametreleri - "
+
+
+def _damper_param_side(obj: str | None, tok: str | None) -> str | None:
+    return (DAMPER_PARAM_TOKENS.get(obj or "") or {}).get(tok or "")
 
 
 def _damper_side_used(damper_selection: dict[str, int], side: str) -> bool:
@@ -789,9 +801,7 @@ def filter_standard_list(
                 kept_valve_rows += 1
                 continue
             group = f"{VALVE_GROUP_PREFIX}{valve_labels.get(valve_key, valve_key)}"
-        elif damper_selection is not None and parsed_obj == DAMPER_PARAM_OBJECT and (
-            side := DAMPER_PARAM_TOKENS.get(parsed_tok or "")
-        ):
+        elif damper_selection is not None and (side := _damper_param_side(parsed_obj, parsed_tok)):
             if not _damper_side_used(damper_selection, side):
                 group = f"{DAMPER_PARAM_GROUP_PREFIX}{SIDE_LABELS[side]} secilmedi"
             elif (
