@@ -16,6 +16,7 @@ from register_engine import (
     ALWAYS_DROPPED_OBJECTS,
     BRANDS,
     DamperGroup,
+    FAN_DOOR_GROUP_PREFIX,
     FeatureGroup,
     FilterAlarm,
     SensorGroup,
@@ -704,6 +705,8 @@ class App(tk.Tk):
                     kind = "alarm"
                 elif name.startswith(dropped_labels):
                     kind = "dropped"
+                elif name.startswith(FAN_DOOR_GROUP_PREFIX):
+                    kind = "fan"
                 elif any(name.startswith(lbl) for lbl in damper_labels):
                     kind = "damper"
                 elif any(name.startswith(lbl) for lbl in sensor_labels):

@@ -14,6 +14,9 @@ cihaza özel Excel listeleri üreten Windows masaüstü programi.
 2. **2. Fan Secimi** – **Besleme fan markasi**: `ebm-papst`, `Danfoss`, `Ziehl-Abegg`,
    `WellDrive` veya `Yok`, sonra **Adet** (ebm-papst ve Ziehl-Abegg 1-4,
    Danfoss ve WellDrive 1-2). Ayni secim **Egzoz fan markasi** icin de yapilir.
+   Fan kapak sensorleri bu secime baglidir: `AHUStart\VANTDOORSW` (vantilator)
+   **her zaman** kalir, `AHUStart\ASPDOORSW` (aspirator) yalnizca **en az 1 egzoz
+   fani secildiginde** listeye girer; marka veya adet farketmez.
 3. **3. Damper (Klape) Motorlari** – damper motorlari da standart Excel'den
    otomatik listelenir (Ufleme, Taze hava, Donus, Egzoz, Karisim, By-pass).
    Her taraf için **tik kutusu + motor adedi** (1-4). Tik kaldirilan tarafin
@@ -67,8 +70,11 @@ Islem Kaydi alaninin tekerlegi kendi metnini kaydirir.
   blok secili degilse transmitter tiki tek basina hicbir satir geri getirmez.
 - Pop-up'ta tik kaldirilan filtre alarmi satiri silinir; `Alarm_Reset` her zaman
   kalir, `TempAVG` grubu her zaman silinir (secimden bagimsiz).
-- Sabit satirlar her zaman korunur: AHU start/stop, batarya, `Air_FlowFan1/2`
+- Sabit satirlar her zaman korunur: AHU start/stop, `AHUStart\VANTDOORSW`
+  (vantilator kapak sensoru), batarya, `Air_FlowFan1/2`
   havalandirma satirlari, genel alarm satirlari, `BmsTemp_Hum`, `Hum_Mod_Sel`.
+- `AHUStart\ASPDOORSW` (aspirator kapak sensoru) egzoz fani `Yok` secildiginde
+  silinir; islem kaydinda "Fan kapak sensoru - aspirator secilmedi" olarak listelenir.
 
 ## Algilanan sensorler (standart listeden otomatik)
 

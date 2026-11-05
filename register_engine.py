@@ -313,6 +313,10 @@ ALARM_GROUP_PREFIX = "Filtre alarmi - "
 ALWAYS_DROPPED_OBJECTS = {"TempAVG": "TempAVG (ortalama oda sicakligi)"}
 # Sabit kalmasi gereken satirlar (sensor dalgina takilmamasi icin acikca tutulur).
 ALWAYS_KEPT_OBJECTS = {"Alarm_Reset"}
+# AHUStart\... kapak sensorleri: vantilator daima kalir, aspirator yalnizca
+# en az bir egzoz fani secildiginde listeye girer.
+FAN_DOOR_SWITCH_TOKENS = {"VANTDOORSW": "supply", "ASPDOORSW": "exhaust"}
+FAN_DOOR_GROUP_PREFIX = "Fan kapak sensoru - "
 
 
 @dataclass
@@ -678,6 +682,13 @@ def filter_standard_list(
             group = f"{ALWAYS_DROPPED_OBJECTS[parsed_obj]} - kullanilmiyor"
         elif parsed_obj in ALWAYS_KEPT_OBJECTS:
             continue  # Alarm_Reset her zaman listeye eklenir
+        elif parsed_tok in FAN_DOOR_SWITCH_TOKENS:
+            direction = FAN_DOOR_SWITCH_TOKENS[parsed_tok]
+            sel_brand, sel_count = selections[direction]
+            keep = direction == "supply" or (sel_brand is not None and sel_count >= 1)
+            if keep:
+                continue
+            group = f"{FAN_DOOR_GROUP_PREFIX}aspirator secilmedi"
         elif alarm_enabled and parsed_obj == FILTER_ALARM_OBJECT:
             total_alarm_rows += 1
             if parsed_tok in chosen_alarms:

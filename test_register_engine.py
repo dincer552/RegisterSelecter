@@ -602,3 +602,40 @@ def test_alarm_reset_is_always_included(tmp_path):
     assert r"Alarm_Reset\Alarm_Reset" in names
     other = _sensor_run(tmp_path, "bacnet", None, out_name="reset_ba.xlsx")
     assert r"Alarm_Reset\Alarm_Reset" in _names(other, "bacnet")
+
+
+# ---------- fan kapak sensorleri: AHUStart\VANTDOORSW / AHUStart\ASPDOORSW ----------
+
+ASPDOORSW_GROUP = "Fan kapak sensoru - aspirator secilmedi"
+
+
+@pytest.mark.parametrize("protocol", ["modbus", "bacnet"])
+def test_vantdoorsw_is_always_included(tmp_path, protocol):
+    """Fan secimi hic olmasa bile vantilator kapak sensoru listede kalmali."""
+    res = _sensor_run(
+        tmp_path, protocol, None, out_name=f"door_{protocol}.xlsx",
+        supply_brand=None, supply_count=0, exhaust_brand=None, exhaust_count=0,
+    )
+    names = _names(res, protocol)
+    assert r"AHUStart\VANTDOORSW" in names
+    assert r"AHUStart\ASPDOORSW" not in names
+    assert res.removed_by_group[ASPDOORSW_GROUP] == 1
+
+
+@pytest.mark.parametrize("protocol", ["modbus", "bacnet"])
+def test_aspdoorsw_needs_any_exhaust_fan(tmp_path, protocol):
+    """Egzoz fani markasi/secilen adetten bagimsiz: en az 1 aspirator varsa satir kalir."""
+    no_exhaust = _sensor_run(
+        tmp_path, protocol, None, out_name=f"door_no_{protocol}.xlsx",
+        exhaust_brand=None, exhaust_count=0,
+    )
+    one_exhaust = _sensor_run(
+        tmp_path, protocol, None, out_name=f"door_one_{protocol}.xlsx",
+        exhaust_brand="danfoss", exhaust_count=1,
+    )
+    assert r"AHUStart\ASPDOORSW" in _names(one_exhaust, protocol)
+    assert ASPDOORSW_GROUP not in one_exhaust.removed_by_group
+    for res, door_rows in ((one_exhaust, 0), (no_exhaust, 1)):
+        assert res.removed_rows == (
+            (EXPECTED_TOTAL_FAN_ROWS - res.kept_fan_rows) + EXPECTED_TOTAL_TEMPAVG_ROWS + door_rows
+        )
