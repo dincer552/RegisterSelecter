@@ -1150,6 +1150,55 @@ class App(tk.Tk):
         self.destroy()
 
 
+def _run_swap_helper(target: Path) -> None:
+    """Indirilen EXE bu modda acilir: eski EXE'yi kendisiyle degistirip ondan yeniden baslar."""
+    root = tk.Tk()
+    root.title(f"{APP_TITLE} guncelleniyor")
+    root.configure(bg=BG)
+    root.resizable(False, False)
+    root.attributes("-topmost", True)
+    root.protocol("WM_DELETE_WINDOW", lambda: None)
+    tk.Label(
+        root, text=f"{APP_TITLE} v{__version__} kuruluyor", bg=BG, fg="#1f2a37", font=("Segoe UI", 10, "bold")
+    ).pack(padx=18, pady=(14, 4))
+    bar = ttk.Progressbar(root, orient="horizontal", length=320, mode="indeterminate")
+    bar.pack(padx=18, pady=6)
+    bar.start(70)
+    info = tk.Label(
+        root, text="Eski surum kapaniyor, EXE degistiriliyor...", bg=BG, fg=GRAY,
+        font=("Consolas", 9), wraplength=320, justify="left",
+    )
+    info.pack(padx=18, pady=(0, 14))
+    own = Path(sys.executable)
+
+    def note(attempt: int, _error: str) -> None:
+        root.after(0, lambda: info.configure(text=f"Eski surum henuz kapanmadi - {attempt}. deneme bekliyor..."))
+
+    def worker() -> None:
+        outcome = updater.swap_with_retry(own, target, note=note)
+        root.after(0, lambda: _finish_swap(root, outcome, own))
+
+    threading.Thread(target=worker, daemon=True).start()
+    root.mainloop()
+
+
+def _finish_swap(root, outcome, own: Path) -> None:
+    if outcome.ok:
+        updater.relaunch(outcome.target)
+        root.destroy()
+        return
+    updater.log_swap(f"kullaniciya hata gosterildi: {outcome.error}")
+    messagebox.showerror(
+        "Guncelleme",
+        f"EXE degistirilemedi ({outcome.attempts} deneme, {outcome.elapsed:.0f} sn):\n{outcome.error}\n\n"
+        f"Hedef: {outcome.target}\nIndirilen: {own}\nAyrinti: {updater.swap_log_path()}\n\n"
+        "Programi tamamen kapatip indirilen dosyayi hedefin uzerine kopyalayabilirsiniz.\n"
+        "Yeni surum simdilik indirilen dosyadan baslatiliyor.",
+    )
+    updater.relaunch(own)
+    root.destroy()
+
+
 def main() -> None:
     if "--selftest" in sys.argv:
         try:
@@ -1160,6 +1209,13 @@ def main() -> None:
             print(f"SELFTEST FAILED: {exc}")
             raise SystemExit(1)
         print("SELFTEST OK")
+        return
+    target = updater.parse_replace_target(sys.argv)
+    if target is not None:
+        if not getattr(sys, "frozen", False):
+            print(f"swap yarimcilari yalnizca paketlenmis EXE'de calisir: {target}")
+            return
+        _run_swap_helper(target)
         return
     app = App()
     app.protocol("WM_DELETE_WINDOW", app.on_close)

@@ -316,6 +316,23 @@ eklersen `Oransal` modunda otomatik olarak listeye girer.
 - Indirme biter, pencerede `12.8 MB indirildi - program yeniden baslatiliyor...`
   yazar; kisa bir beklemenin ardindan program **kapanir**, yeni EXE eskisinin
   yerine konur ve **yeni EXE kendiliginden baslar**.
+- EXE degistirme isi **indirilen yeni EXE'nin kendisine** aittir: eski surum
+  `%TEMP%`'deki yeni dosyayi `--replace-old <eski EXE yolu>` argumaniyla ayri bir
+  surec olarak baslatir ve kapanir. Yeni surec, eski EXE kilidi kalkana kadar
+  (0,5 sn aralikla, en fazla **120 sn**) kendi kopyasini eski yolun uzerine yazar;
+  basarili olursa programi **eski yoldan** yeniden baslatir.
+- Eski surum 120 sn icin kapanmazsa (program hala acik, klasore yazma izni yok,
+  antivus dosyayi tutuyor) hata penceresi acilir: deneme sayisi, hatanin tipi,
+  hedef/indirilen yollari ve **ayrinti logunun yolu** gorunur. Bu durumda yeni
+  surum indirilen dosyadan baslatilir, yani islem kullaniciya bir sey yaptirmadan
+  tamamlanir; EXE'yi kalici degistirmek icin programi kapatip indirilen dosyayi
+  eski dosyanin uzerine kopyalamak yeterlidir.
+- Tum swap denemeleri `%TEMP%\RegisterSelecter_guncelleme.log` dosyasina
+  zaman damgasiyla yazilir; guncelleme "bir sey olmadi" diye kapanirse once buraya
+  bakilir.
+- Onceki surumlerdeki PowerShell/`Move-Item` tabanli swap kaldirildi: senaryo
+  senkronize klasor, antivus kilidi veya yetkisiz PowerShell yuzunden sessizce
+  takilip EXE'yi degistiremiyordu.
 - Indirme yanda kalirsa (boyut tutmuyorsa) veya 1 MB'den kucukse guncelleme
   **iptal edilir**, yarim dosya silinir, eski surum oldugu gibi kalir.
 - Pencere indirme sirasinda kapatilamaz; hata olursa GUNCELLE butonu geri acilir.

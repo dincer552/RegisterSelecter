@@ -5,9 +5,11 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
@@ -107,25 +109,105 @@ def download_release(info: ReleaseInfo, timeout: float = 600.0, progress=None) -
 
 
 def apply_and_restart(new_exe: Path) -> None:
-    """Swap the running EXE with the downloaded one and relaunch it."""
+    """Indirilen EXE'yi yardimci surec olarak baslatir; swap isi onun isidir.
+
+    Kendi uzerine yazilamadigi icin eski surum swap'i kendisi yapmaz: indirilen
+    EXE "--replace-old <eski yol>" ile baslatilir, o da eski EXE serbest kalinca
+    kendi kopyasini eski yolun uzerine yazar ve programi eski yoldan acir.
+    """
     current = Path(sys.executable)
-    pid = os.getpid()
-    ps_script = f"""
-$ErrorActionPreference = "Stop"
-$exe = "{current}"
-$new = "{new_exe}"
-while (Get-Process -Id {pid} -ErrorAction SilentlyContinue) {{ Start-Sleep -Milliseconds 400 }}
-do {{
-    try {{ Move-Item -Force -Path $new -Destination $exe; break }}
-    catch {{ Start-Sleep -Milliseconds 500 }}
-}} while ($true)
-Start-Process -FilePath $exe
-"""
-    script = Path(tempfile.gettempdir()) / "RegisterSelecter_update.ps1"
-    script.write_text(ps_script, encoding="utf-8")
-    detached = 0x00000008 | 0x00000200  # DETACHED_PROCESS | CREATE_NO_WINDOW
-    subprocess.Popen(
-        ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script)],
-        creationflags=detached,
-        close_fds=True,
-    )
+    if new_exe.resolve() == current.resolve():
+        relaunch(current)
+        return
+    log_swap(f"yardimci surec baslatiliyor: {' '.join(replace_argv(new_exe, current))}")
+    subprocess.Popen(replace_argv(new_exe, current), creationflags=_detached_flags(), close_fds=True)
+
+
+# ---------- EXE degistirme (swap) yardimcilari ----------
+
+REPLACE_FLAG = "--replace-old"
+SWAP_TIMEOUT = 120.0
+SWAP_INTERVAL = 0.5
+SWAP_LOG_NAME = "RegisterSelecter_guncelleme.log"
+
+CREATE_NO_WINDOW = 0x08000000
+
+
+@dataclass
+class SwapOutcome:
+    ok: bool
+    target: Path
+    attempts: int
+    error: str = ""
+    elapsed: float = 0.0
+
+
+def _detached_flags() -> int:
+    return CREATE_NO_WINDOW if os.name == "nt" else 0
+
+
+def swap_log_path() -> Path:
+    return Path(tempfile.gettempdir()) / SWAP_LOG_NAME
+
+
+def log_swap(message: str, log_file: Path | None = None) -> None:
+    """Swap denemelerini %TEMP% loguna yazar; yazamazsa sessizce gecilir."""
+    path = log_file or swap_log_path()
+    try:
+        with path.open("a", encoding="utf-8") as fh:
+            fh.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {message}\n")
+    except OSError:
+        pass
+
+
+def parse_replace_target(argv: list[str]) -> Path | None:
+    if REPLACE_FLAG not in argv:
+        return None
+    index = argv.index(REPLACE_FLAG) + 1
+    if index >= len(argv):
+        return None
+    return Path(argv[index])
+
+
+def replace_argv(new_exe: Path, current: Path) -> list[str]:
+    return [str(new_exe), REPLACE_FLAG, str(current)]
+
+
+def relaunch(exe: Path) -> None:
+    subprocess.Popen([str(exe)], creationflags=_detached_flags(), close_fds=True)
+
+
+def swap_copy(own: Path, target: Path) -> None:
+    shutil.copyfile(own, target)
+
+
+def swap_with_retry(own: Path, target: Path, *, timeout: float = SWAP_TIMEOUT,
+                    interval: float = SWAP_INTERVAL, copy=swap_copy,
+                    sleep=time.sleep, clock=time.monotonic, note=None) -> SwapOutcome:
+    """Kendi EXE'yi hedef yolun uzerine kopyalar; hedef kilitliyse surekli dener.
+
+    Kopyalama ancak eski surum tamamen kapandiginda (veya klasore yazma izni
+    oldugunda) basarili olur, bu yuzden basarisizlik tek basine kilitten degil
+    izinden de kaynaklanabilir; ayrinti logda okunur.
+    """
+    started = clock()
+    attempts = 0
+    error = ""
+    while True:
+        attempts += 1
+        try:
+            copy(own, target)
+        except OSError as exc:
+            error = f"{type(exc).__name__}: {exc}"
+            log_swap(f"deneme {attempts} basarisiz: {error}")
+            if note:
+                note(attempts, error)
+        else:
+            elapsed = clock() - started
+            log_swap(f"swap OK ({attempts} deneme, {elapsed:.1f}s): {own} -> {target}")
+            return SwapOutcome(True, target, attempts, "", elapsed)
+        if clock() - started >= timeout:
+            elapsed = clock() - started
+            log_swap(f"swap BASARISIZ ({attempts} deneme, {elapsed:.1f}s): {error}")
+            return SwapOutcome(False, target, attempts, error, elapsed)
+        sleep(interval)
