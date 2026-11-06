@@ -56,8 +56,9 @@ cihaza özel Excel listeleri üreten Windows masaüstü programi.
    kaldirilirsa `PrHighAlarm`, `PrHighAlmSet`, `DuctPress`, `DuctPressureBMS` ve
    `QBM97xx_*.CommAlarm` satirlari silinir. `Air_FlowFan1/2` satirlari her zaman kalir.
 6. **6. Filtre Alarmlari** – **FILTRE ALARMLARINI SEC (19)** butonu pop-up acar.
-   Standart Excel'den okunan 19 filtre kirlilik alarmi tek tek tiklanir; tik
-   kaldirilan alarmin `Alarm\<Token>` satiri listeden silinir.
+   Standart Excel'den okunan 19 filtre kirlilik alarmi tek tek tiklanir; **varsayilan
+   hicbiri tikli degildir** ve tik kaldirilan alarmin `Alarm\<Token>` satiri listeden
+   silinir (yani tiklanmayan alarm listeye girmez).
    **Tumunu Sec / Tumunu Kaldir** butonlari ve `Secili: x/19` sayaci pop-up
    icinde de guncellenir. Pop-up acikken fare tekerlegi pop-up listesini kaydirdir.
    - `Alarm_Reset\Alarm_Reset` satiri **her zaman** listeye eklenir (tik ile degismez).
@@ -138,8 +139,9 @@ Islem Kaydi alaninin tekerlegi kendi metnini kaydirir.
   5 satir zaten kademe kuraliyla silinir; tik tek basina satirlari geri getirmez.
 - Blok tiklari (SAF / EAF / RunAround) kaldirilirsa o blogun tum satirlari silinir;
   blok secili degilse transmitter tiki tek basina hicbir satir geri getirmez.
-- Pop-up'ta tik kaldirilan filtre alarmi satiri silinir; `Alarm_Reset` her zaman
-  kalir, `TempAVG` grubu, `MBUnit\BMS_Check_Read/Write`, `BmsTemp_Hum`
+- Filtre alarmlari **varsayilan tikli degildir**; pop-up'ta yalnizca tiklenen
+  `Alarm\<Token>` satiri listeye girer, tiklenmeyenin satiri silinir. `Alarm_Reset`
+  her zaman kalir, `TempAVG` grubu, `MBUnit\BMS_Check_Read/Write`, `BmsTemp_Hum`
   (RoomTemp/RoomHum/FreshTempFromBms), `TmpControl\Cooling_Active` +
   `Heating_Active` ve `WetBulp_Temp` satirlari her zaman
   silinir (secimden bagimsiz).
@@ -210,8 +212,9 @@ standart listeye yeni blok eklerken sadece bu tabloya satir eklemek yeterlidir.
 ## Filtre alarmlari (standart listeden otomatik)
 
 Program `Alarm\<Token>` satirlarini standart Excel'den tarar; pop-up'ta tek tek
-secilir. Etiket sutunu bos ya da register adinin ayni ise etiket token'dan
-uretilir (`FreshM5FilterAlm` -> `Fresh M5 Filter Alarm`).
+secilir. **Varsayilan olarak hicbir alarm tikli degildir** (`Secili: 0/19`);
+kullanici cihazinda bulunanlari isaretler. Etiket sutunu bos ya da register adinin
+ayni ise etiket token'dan uretilir (`FreshM5FilterAlm` -> `Fresh M5 Filter Alarm`).
 
 | Grup | Token kalibi | Adet |
 |---|---|---|
@@ -241,6 +244,10 @@ Toplam **19 alarm satiri/protokol**. Ayrica:
   tablosu o isimle eslesir. Islem kaydinda "WetBulp_Temp (nemlendirici wet bulb
   sicakligi) - kullanilmiyor" olarak listelenir.
 - Standart listeye yeni `Alarm\...` satiri eklersen pop-up'ta otomatik belirir.
+- Tikler `register_selecter.json` icinde `alarms` anahtariyla hatirlanir, ama
+  `defaults_rev` damgasi yoksa geri yuklenmez: alarmlar eskiden varsayilan
+  tikliyken kaydedilmis eski dosyalar, bu varsayilan degistikten sonra yine bos
+  acilir (`_apply_saved_alarms`). Damga, ilk uretim/kapanista yazilan kayda eklenir.
 
 ## Su vanalari (standart listeden otomatik)
 

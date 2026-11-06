@@ -47,6 +47,9 @@ from version import __version__
 APP_TITLE = "REGISTER SELECTER"
 CHECK_INTERVAL_MS = 60_000
 WHEEL_NOTCH_ROWS = 3
+# Varsayilanlar degistiginde (filtre alarmlari tik siz yapildi) eski kayitlarda
+# sakli tikler geri yuklenmesin diye config'e surulen damga.
+DEFAULTS_REV = 1
 
 BG = "#f4f6f8"
 HEADER_BG = "#1f2a37"
@@ -488,8 +491,9 @@ class App(tk.Tk):
         tk.Label(
             sec,
             text="Filtre kirlilik alarmlari standart listeden okunur ve pop-up icinde tek tek secilir; "
-            "secilmeyen alarm satiri listeden silinir. Alarm_Reset registeri her zaman eklenir, "
-            "TempAVG ve MBUnit (BMS_Check_Read/Write) satirlari ise hicbir sekilde eklenmez.",
+            "varsayilan hicbiri tikli degildir, secilmeyen alarm satiri listeden silinir. "
+            "Alarm_Reset registeri her zaman eklenir; TempAVG, MBUnit (BMS_Check_Read/Write), "
+            "BmsTemp_Hum, Cooling/Heating_Active ve WetBulp_Temp satirlari ise hicbir sekilde eklenmez.",
             bg="white", fg="#4b5563", font=("Segoe UI", 9), wraplength=760, justify="left", anchor="w",
         ).pack(fill="x", padx=10, pady=(6, 2))
 
@@ -511,7 +515,7 @@ class App(tk.Tk):
             return
         btn.configure(text=f"FILTRE ALARMLARINI SEC ({len(self.alarm_alarms)})")
         for alarm in self.alarm_alarms:
-            self.alarm_vars.setdefault(alarm.token, tk.BooleanVar(value=True))
+            self.alarm_vars.setdefault(alarm.token, tk.BooleanVar(value=False))
         self._refresh_alarm_summary()
 
     def _refresh_alarm_summary(self) -> None:
@@ -1099,12 +1103,7 @@ class App(tk.Tk):
             for code, var in self.feature_vars[group.obj].items():
                 var.set(code in chosen)
             self._sync_feature_subs(group)
-        alarms = cfg.get("alarms")
-        if alarms is not None:
-            chosen = set(alarms)
-            for token, var in self.alarm_vars.items():
-                var.set(token in chosen)
-            self._refresh_alarm_summary()
+        self._apply_saved_alarms(cfg)
         valves = cfg.get("valves")
         if valves is not None:
             chosen = set(valves)
@@ -1123,6 +1122,20 @@ class App(tk.Tk):
         self.hum_control_var.set(bool(cfg.get("hum_control", False)))
         self.co_valve_var.set(bool(cfg.get("co_valve", False)))
 
+    def _apply_saved_alarms(self, cfg: dict) -> None:
+        """Kayitli filtre alarmi tiklerini geri yukler.
+
+        Varsayilan 'tikli' oldugu donemde yazilan kayitlar (defaults_rev damgasi
+        olmayanlar) geri yuklenmez; aksi halde alarmlar hala hepsi secili acilir.
+        """
+        alarms = cfg.get("alarms")
+        if alarms is None or int(cfg.get("defaults_rev", 0)) < DEFAULTS_REV:
+            return
+        chosen = set(alarms)
+        for token, var in self.alarm_vars.items():
+            var.set(token in chosen)
+        self._refresh_alarm_summary()
+
     def _save_config(self) -> None:
         cfg = {
             "supply_brand": self.supply_brand_var.get(),
@@ -1140,6 +1153,7 @@ class App(tk.Tk):
             "rotor_mode": self._rotor_mode(),
             "hum_control": self._hum_control_enabled(),
             "alarms": self._alarm_selection(),
+            "defaults_rev": DEFAULTS_REV,
         }
         try:
             config_file().write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
