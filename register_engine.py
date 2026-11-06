@@ -8,8 +8,9 @@ satiri ve nem kontrolu secilmeyince nem set ayar satirlari.
 Sabit kalan satirlar: AHU start, batarya, SAF/EAF mantigi ve genel alarm
 satirlari. Secimden bagimsiz
 her zaman silinen satirlar: TempAVG blogu, MBUnit (BMS iletisim kontrol)
-satirlari, BmsTemp_Hum (BMS'ten okunan oda/taze hava degerleri) ve
-TmpControl\Cooling_Active / Heating_Active aktif geri bildirim satirlari. DamperCont /
+satirlari, BmsTemp_Hum (BMS'ten okunan oda/taze hava degerleri),
+TmpControl\Cooling_Active / Heating_Active aktif geri bildirim satirlari ve
+WetBulp_Temp (nemlendirici wet bulb) satiri. DamperCont /
 BypassDmpCont satirlari sirasiyla karisim ve by-pass motorunun varligina baglidir.
 """
 
@@ -525,8 +526,12 @@ ALWAYS_DROPPED_TOKENS: dict[tuple[str, str], str] = {
     ("TmpControl", "Cooling_Active"): "TmpControl (sogutma/isitma aktif geri bildirimi)",
     ("TmpControl", "Heating_Active"): "TmpControl (sogutma/isitma aktif geri bildirimi)",
 }
+# Obje on eki olmayan satirlar (`WetBulp_Temp` gibi) saf isimle eslesir.
+ALWAYS_DROPPED_NAMES: dict[str, str] = {
+    "WetBulp_Temp": "WetBulp_Temp (nemlendirici wet bulb sicakligi)",
+}
 ALWAYS_DROPPED_LABELS: tuple[str, ...] = tuple(
-    {*ALWAYS_DROPPED_OBJECTS.values(), *ALWAYS_DROPPED_TOKENS.values()}
+    {*ALWAYS_DROPPED_OBJECTS.values(), *ALWAYS_DROPPED_TOKENS.values(), *ALWAYS_DROPPED_NAMES.values()}
 )
 # Sabit kalmasi gereken satirlar (sensor dalgina takilmamasi icin acikca tutulur).
 ALWAYS_KEPT_OBJECTS = {"Alarm_Reset"}
@@ -604,6 +609,21 @@ def parse_object_token(name_cell: str | None) -> tuple[str, str] | tuple[None, N
         return None, None
     obj, tok = s.split("\\", 1)
     return obj.strip(), tok.strip()
+
+
+def _bare_row_name(name_cell: str | None) -> str:
+    r"""`Humidifier\WetBulp_Temp=65720` -> `WetBulp_Temp` (obje ve adres eki olmadan)."""
+    if not name_cell:
+        return ""
+    s = str(name_cell).strip()
+    s = re.sub(r"=\d+$", "", s)
+    s = re.sub(r"^0x[0-9A-Fa-f]+\s+", "", s).strip("'").strip()
+    return s.rsplit("\\", 1)[-1].strip()
+
+
+def _always_dropped_label(obj: str | None, tok: str | None, name_cell: str | None) -> str | None:
+    """Hicbir cihazda listeye girmemesi istenen tekil satirlarin grup adini dondurur."""
+    return ALWAYS_DROPPED_TOKENS.get((obj, tok)) or ALWAYS_DROPPED_NAMES.get(_bare_row_name(name_cell))
 
 
 def _signal_for_token(obj: str, tok: str) -> tuple[str, str] | None:
@@ -889,7 +909,7 @@ def filter_standard_list(
         feature_state = (
             _feature_state(parsed_obj, parsed_tok or "") if feature_enabled and parsed_obj else None
         )
-        dropped_token = ALWAYS_DROPPED_TOKENS.get((parsed_obj, parsed_tok))
+        dropped_token = _always_dropped_label(parsed_obj, parsed_tok, value)
         if dropped_token is not None:
             group = f"{dropped_token} - kullanilmiyor"
         elif info is not None:

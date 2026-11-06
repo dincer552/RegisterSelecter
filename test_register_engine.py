@@ -47,6 +47,9 @@ EXPECTED_TOTAL_BMSTEMP_ROWS = 3
 # TmpControl\Cooling_Active + Heating_Active aktif geri bildirimi HIC eklenmez.
 EXPECTED_TOTAL_ACTIVE_ROWS = 2
 ACTIVE_GROUP = "TmpControl (sogutma/isitma aktif geri bildirimi) - kullanilmiyor"
+# WetBulp_Temp (nemlendirici wet bulb sicakligi) satiri da HIC eklenmez.
+EXPECTED_TOTAL_WETBULP_ROWS = 1
+WETBULP_GROUP = "WetBulp_Temp (nemlendirici wet bulb sicakligi) - kullanilmiyor"
 # EBM 4+4 secildiginde listede kalan tek "silinmeyen" sayilari bu temele gore okunur.
 FAN_BASELINE_REMOVED = (
     EXPECTED_TOTAL_FAN_ROWS
@@ -55,6 +58,7 @@ FAN_BASELINE_REMOVED = (
     + EXPECTED_TOTAL_MBUNIT_ROWS
     + EXPECTED_TOTAL_BMSTEMP_ROWS
     + EXPECTED_TOTAL_ACTIVE_ROWS
+    + EXPECTED_TOTAL_WETBULP_ROWS
 )
 
 
@@ -104,6 +108,7 @@ def test_full_selection_keeps_everything(standard, out_name, tmp_path):
         EXPECTED_TOTAL_BMSTEMP_ROWS
     )
     assert res.removed_by_group[ACTIVE_GROUP] == EXPECTED_TOTAL_ACTIVE_ROWS
+    assert res.removed_by_group[WETBULP_GROUP] == EXPECTED_TOTAL_WETBULP_ROWS
 
 
 def test_mbunit_rows_are_never_included(tmp_path):
@@ -178,6 +183,21 @@ def test_active_feedback_rows_are_never_included(tmp_path, protocol):
         assert r"TmpControl\Tmp_Set_BMS" in names
 
 
+@pytest.mark.parametrize("protocol", ["modbus", "bacnet"])
+def test_wetbulp_row_is_never_included(tmp_path, protocol):
+    """`WetBulp_Temp` (obje on eki olmayan satir) hicbir secimde listeye girmemeli."""
+    all_signals = {g.obj: [c for c, _ in g.signals] for g in list_sensor_groups(DATA_DIR)}
+    combos = (
+        ("fansiz", None, {"supply_brand": None, "supply_count": 0, "exhaust_brand": None, "exhaust_count": 0}),
+        ("tam fan", None, {}),
+        ("nem kontrolu acik", all_signals, {"hum_control": True, "rotor_mode": "proportional"}),
+    )
+    for label, sensors, extra in combos:
+        res = _sensor_run(tmp_path, protocol, sensors, out_name=f"wetbulp_{protocol}_{label}.xlsx", **extra)
+        assert "WetBulp_Temp" not in _names(res, protocol), label
+        assert res.removed_by_group[WETBULP_GROUP] == EXPECTED_TOTAL_WETBULP_ROWS, label
+
+
 def test_ebm_supply_2_exhaust_1(tmp_path):
     res = filter_standard_list(
         protocol="modbus",
@@ -196,6 +216,7 @@ def test_ebm_supply_2_exhaust_1(tmp_path):
         + EXPECTED_TOTAL_MBUNIT_ROWS
         + EXPECTED_TOTAL_BMSTEMP_ROWS
         + EXPECTED_TOTAL_ACTIVE_ROWS
+        + EXPECTED_TOTAL_WETBULP_ROWS
     )
 
     wb = load_workbook(res.output)
@@ -924,6 +945,7 @@ def test_aspdoorsw_needs_any_exhaust_fan(tmp_path, protocol):
             + EXPECTED_TOTAL_MBUNIT_ROWS
             + EXPECTED_TOTAL_BMSTEMP_ROWS
             + EXPECTED_TOTAL_ACTIVE_ROWS
+            + EXPECTED_TOTAL_WETBULP_ROWS
             + door_rows
         )
 

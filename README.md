@@ -70,6 +70,9 @@ cihaza özel Excel listeleri üreten Windows masaüstü programi.
    - `TmpControl\Cooling_Active` ve `TmpControl\Heating_Active` satirlari da
      **hicbir sekilde** listeye eklenmez (sogutma/isitma aktif geri bildirimi;
      kademe/secimden bagimsiz daima silinir).
+   - `WetBulp_Temp` satiri (nemlendirici wet bulb sicakligi) da **hicbir sekilde**
+     listeye eklenmez. Bu satirin obje on eki yoktur (`TmpControl\...` gibi degil),
+     bu yuzden isimle (`ALWAYS_DROPPED_NAMES`) eslesir.
 7. **7. Su Vanalari (CV / HV / CO)** – her vananin kendi satirlari tik kutusu ile
    secilir: tikli vananin pozisyon (`CV_Pos` / `HV_Pos`), geri bildirim
    (`CV_Fdb_1` / `HV_Fdb_1`), `Mode Select` ve `Manuel Referans` satirlari listeye
@@ -137,8 +140,8 @@ Islem Kaydi alaninin tekerlegi kendi metnini kaydirir.
   blok secili degilse transmitter tiki tek basina hicbir satir geri getirmez.
 - Pop-up'ta tik kaldirilan filtre alarmi satiri silinir; `Alarm_Reset` her zaman
   kalir, `TempAVG` grubu, `MBUnit\BMS_Check_Read/Write`, `BmsTemp_Hum`
-  (RoomTemp/RoomHum/FreshTempFromBms) ve `TmpControl\Cooling_Active` +
-  `Heating_Active` satirlari her zaman
+  (RoomTemp/RoomHum/FreshTempFromBms), `TmpControl\Cooling_Active` +
+  `Heating_Active` ve `WetBulp_Temp` satirlari her zaman
   silinir (secimden bagimsiz).
 - Tik kaldirilan su vanasinin (CV1/CV2/HV1/HV2) tum satirlari silinir. `CV2`/`HV2`
   kutusu ana vana secilmedigi surece gorunmez ve secilemez; ana tik kaldirilirsa
@@ -231,6 +234,12 @@ Toplam **19 alarm satiri/protokol**. Ayrica:
   geri bildirimi) - kullanilmiyor" olarak listelenir. Elesme obje + token ile
   yapilir (`ALWAYS_DROPPED_TOKENS`), bu yuzden `RotorControl\RotorActive` ve
   `TmpControl\ChangeOverActive` gibi diger "Active" satirlari etkilenmez.
+- `WetBulp_Temp` (1 satir, nemlendirici wet bulb sicakligi) da **her zaman
+  silinir**. Satirin obje on eki olmadigi icin (`WetBulp_Temp` / BACnet'te
+  `WetBulp_Temp=65720`) isim eslesmesi kullanilir: `_bare_row_name` adres ekini
+  (`=65720`) ve obje on ekini atarak saf ismi cikarir, `ALWAYS_DROPPED_NAMES`
+  tablosu o isimle eslesir. Islem kaydinda "WetBulp_Temp (nemlendirici wet bulb
+  sicakligi) - kullanilmiyor" olarak listelenir.
 - Standart listeye yeni `Alarm\...` satiri eklersen pop-up'ta otomatik belirir.
 
 ## Su vanalari (standart listeden otomatik)
