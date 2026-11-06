@@ -5,11 +5,11 @@ Ziehl-Abegg, WellDrive), tiklanmayan sicaklik-nem-CO2 sensor satirlari,
 adetini asan damper (klape) motoru satirlari, nemlendirici kademe satirlari,
 tiklanmayan CO vanasi satirlari ve nem kontrolu secilmeyince nem set ayar
 satirlari.
-Sabit kalan satirlar: AHU start, batarya, SAF/EAF mantigi, BmsTemp_Hum ve genel
-alarm satirlari. Secimden bagimsiz
-her zaman silinen satirlar: TempAVG blogu ve MBUnit (BMS iletisim kontrol)
-satirlari. DamperCont / BypassDmpCont satirlari sirasiyla karisim ve by-pass
-motorunun varligina baglidir.
+Sabit kalan satirlar: AHU start, batarya, SAF/EAF mantigi ve genel alarm
+satirlari. Secimden bagimsiz
+her zaman silinen satirlar: TempAVG blogu, MBUnit (BMS iletisim kontrol)
+satirlari ve BmsTemp_Hum (BMS'ten okunan oda/taze hava degerleri). DamperCont /
+BypassDmpCont satirlari sirasiyla karisim ve by-pass motorunun varligina baglidir.
 """
 
 from __future__ import annotations
@@ -505,6 +505,9 @@ ALARM_GROUP_PREFIX = "Filtre alarmi - "
 ALWAYS_DROPPED_OBJECTS = {
     "TempAVG": "TempAVG (ortalama oda sicakligi)",
     "MBUnit": "MBUnit (BMS iletisim kontrolu)",
+    # BMS'ten okunan oda/taze hava sicaklik-nem degerleri cihaz register
+    # listesinde hicbir zaman istenmez (RoomTemp/RoomHum/FreshTempFromBms).
+    "BmsTemp_Hum": "BmsTemp_Hum (BMS'ten oda/taze hava degerleri)",
 }
 # Sabit kalmasi gereken satirlar (sensor dalgina takilmamasi icin acikca tutulur).
 ALWAYS_KEPT_OBJECTS = {"Alarm_Reset"}

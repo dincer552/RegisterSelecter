@@ -41,9 +41,15 @@ EXPECTED_TOTAL_FAN_ROWS = 216
 EXPECTED_TOTAL_TEMPAVG_ROWS = 5
 # MBUnit (BMS_Check_Read / BMS_Check_Write) satirlari da HIC eklenmez.
 EXPECTED_TOTAL_MBUNIT_ROWS = 2
+# BmsTemp_Hum (RoomTemp/RoomHum/FreshTempFromBms) satirlari da HIC eklenmez.
+EXPECTED_TOTAL_BMSTEMP_ROWS = 3
 # EBM 4+4 secildiginde listede kalan tek "silinmeyen" sayilari bu temele gore okunur.
 FAN_BASELINE_REMOVED = (
-    EXPECTED_TOTAL_FAN_ROWS - 64 + EXPECTED_TOTAL_TEMPAVG_ROWS + EXPECTED_TOTAL_MBUNIT_ROWS
+    EXPECTED_TOTAL_FAN_ROWS
+    - 64
+    + EXPECTED_TOTAL_TEMPAVG_ROWS
+    + EXPECTED_TOTAL_MBUNIT_ROWS
+    + EXPECTED_TOTAL_BMSTEMP_ROWS
 )
 
 
@@ -84,10 +90,13 @@ def test_full_selection_keeps_everything(standard, out_name, tmp_path):
     )
     assert res.total_fan_rows == EXPECTED_TOTAL_FAN_ROWS
     assert res.kept_fan_rows == 64  # 4+4 EBM unites x 8 satir
-    # fan disinda yalnizca TempAVG + MBUnit bloge kalici olarak silinir
+    # fan disinda yalnizca TempAVG + MBUnit + BmsTemp_Hum blogu kalici olarak silinir
     assert res.removed_rows == FAN_BASELINE_REMOVED
     assert res.removed_by_group["TempAVG (ortalama oda sicakligi) - kullanilmiyor"] == EXPECTED_TOTAL_TEMPAVG_ROWS
     assert res.removed_by_group["MBUnit (BMS iletisim kontrolu) - kullanilmiyor"] == EXPECTED_TOTAL_MBUNIT_ROWS
+    assert res.removed_by_group["BmsTemp_Hum (BMS'ten oda/taze hava degerleri) - kullanilmiyor"] == (
+        EXPECTED_TOTAL_BMSTEMP_ROWS
+    )
 
 
 def test_mbunit_rows_are_never_included(tmp_path):
@@ -108,6 +117,33 @@ def test_mbunit_rows_are_never_included(tmp_path):
             assert r"MBUnit\BMS_Check_Write" not in names
 
 
+BMSTEMP_TOKENS = ("RoomTempFromBms", "RoomHumFromBms", "FreshTempFromBms")
+BMSTEMP_GROUP = "BmsTemp_Hum (BMS'ten oda/taze hava degerleri) - kullanilmiyor"
+
+
+@pytest.mark.parametrize("protocol", ["modbus", "bacnet"])
+def test_bmstemp_rows_are_never_included(tmp_path, protocol):
+    """BMS'ten okunan oda/taze hava satirlari hicbir secimde listeye girmemeli."""
+    all_signals = {g.obj: [c for c, _ in g.signals] for g in list_sensor_groups(DATA_DIR)}
+    combos = (
+        ("fansiz", {"supply_brand": None, "supply_count": 0, "exhaust_brand": None, "exhaust_count": 0}),
+        ("tam fan", {"supply_brand": "ebm", "supply_count": 4, "exhaust_brand": "ebm", "exhaust_count": 4}),
+    )
+    for label, fan_kwargs in combos:
+        for sensor_kwargs in ({}, {"sensor_selection": all_signals}):
+            res = filter_standard_list(
+                protocol=protocol,
+                standard_file=DATA_DIR / PROTOCOLS[protocol]["file"],
+                output_file=tmp_path / f"bmstemp_{protocol}_{label}_{len(sensor_kwargs)}.xlsx",
+                **fan_kwargs,
+                **sensor_kwargs,
+            )
+            names = _names(res, protocol)
+            for token in BMSTEMP_TOKENS:
+                assert rf"BmsTemp_Hum\{token}" not in names, (label, token)
+            assert res.removed_by_group[BMSTEMP_GROUP] == EXPECTED_TOTAL_BMSTEMP_ROWS, (label, sensor_kwargs)
+
+
 def test_ebm_supply_2_exhaust_1(tmp_path):
     res = filter_standard_list(
         protocol="modbus",
@@ -120,7 +156,11 @@ def test_ebm_supply_2_exhaust_1(tmp_path):
     )
     assert res.kept_fan_rows == 16 + 8  # 2 supply + 1 exhaust unite
     assert res.removed_rows == (
-        EXPECTED_TOTAL_FAN_ROWS - 24 + EXPECTED_TOTAL_TEMPAVG_ROWS + EXPECTED_TOTAL_MBUNIT_ROWS
+        EXPECTED_TOTAL_FAN_ROWS
+        - 24
+        + EXPECTED_TOTAL_TEMPAVG_ROWS
+        + EXPECTED_TOTAL_MBUNIT_ROWS
+        + EXPECTED_TOTAL_BMSTEMP_ROWS
     )
 
     wb = load_workbook(res.output)
@@ -320,11 +360,11 @@ def test_sensor_removed_row_count_matches_selection(tmp_path):
     total_sensor_rows = 50
     assert res.removed_rows - baseline.removed_rows == total_sensor_rows
     assert "Room Temp" not in _names(res, "modbus")
-    # sabit satirlar (BMS sicaklik / nem modu) her zaman kalir
-    assert r"BmsTemp_Hum\RoomTempFromBms" in _names(res, "modbus")
+    # Hum_Mod_Sel sabit satirlari her zaman kalir
     assert r"Hum_Mod_Sel\Room_Abs" in _names(res, "modbus")
-    # TempAVG artik hicbir cihazda listeye eklenmez
+    # TempAVG ve BmsTemp_Hum artik hicbir cihazda listeye eklenmez
     assert r"TempAVG\Room_TempAVG" not in _names(res, "modbus")
+    assert r"BmsTemp_Hum\RoomTempFromBms" not in _names(res, "modbus")
 
 
 def test_generate_passes_sensor_selection(tmp_path):
@@ -847,6 +887,7 @@ def test_aspdoorsw_needs_any_exhaust_fan(tmp_path, protocol):
             (EXPECTED_TOTAL_FAN_ROWS - res.kept_fan_rows)
             + EXPECTED_TOTAL_TEMPAVG_ROWS
             + EXPECTED_TOTAL_MBUNIT_ROWS
+            + EXPECTED_TOTAL_BMSTEMP_ROWS
             + door_rows
         )
 

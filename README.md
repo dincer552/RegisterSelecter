@@ -64,6 +64,9 @@ cihaza özel Excel listeleri üreten Windows masaüstü programi.
    - `TempAVG` grubu (ortalama oda sicakligi) **hicbir sekilde** listeye eklenmez.
    - `MBUnit\BMS_Check_Read` ve `MBUnit\BMS_Check_Write` satirlari da **hicbir
      sekilde** listeye eklenmez (BMS baglanti test registerlari cihaz listesinde istenmez).
+   - `BmsTemp_Hum\RoomTempFromBms`, `RoomHumFromBms` ve `FreshTempFromBms`
+     satirleri de **hicbir sekilde** listeye eklenmez (BMS'ten okunan oda/taze
+     hava degerleri; ayri secim kutusu yoktur).
 7. **7. Su Vanalari (CV / HV / CO)** – her vananin kendi satirlari tik kutusu ile
    secilir: tikli vananin pozisyon (`CV_Pos` / `HV_Pos`), geri bildirim
    (`CV_Fdb_1` / `HV_Fdb_1`), `Mode Select` ve `Manuel Referans` satirlari listeye
@@ -126,7 +129,8 @@ Islem Kaydi alaninin tekerlegi kendi metnini kaydirir.
 - Blok tiklari (SAF / EAF / RunAround) kaldirilirsa o blogun tum satirlari silinir;
   blok secili degilse transmitter tiki tek basina hicbir satir geri getirmez.
 - Pop-up'ta tik kaldirilan filtre alarmi satiri silinir; `Alarm_Reset` her zaman
-  kalir, `TempAVG` grubu ve `MBUnit\BMS_Check_Read/Write` satirlari her zaman
+  kalir, `TempAVG` grubu, `MBUnit\BMS_Check_Read/Write` ve `BmsTemp_Hum`
+  (RoomTemp/RoomHum/FreshTempFromBms) satirlari her zaman
   silinir (secimden bagimsiz).
 - Tik kaldirilan su vanasinin (CV1/CV2/HV1/HV2) tum satirlari silinir. `CV2`/`HV2`
   kutusu ana vana secilmedigi surece gorunmez ve secilemez; ana tik kaldirilirsa
@@ -140,7 +144,7 @@ Islem Kaydi alaninin tekerlegi kendi metnini kaydirir.
   satir "Rotor - oransal satirlar (on/off secildi)" olarak listelenir.
 - Sabit satirlar her zaman korunur: AHU start/stop, `AHUStart\VANTDOORSW`
   (vantilator kapak sensoru), batarya, `Air_FlowFan1/2`
-  havalandirma satirlari, genel alarm satirlari, `BmsTemp_Hum`.
+  havalandirma satirlari, genel alarm satirlari.
 - `AHUStart\ASPDOORSW` (aspirator kapak sensoru) egzoz fani `Yok` secildiginde
   silinir; islem kaydinda "Fan kapak sensoru - aspirator secilmedi" olarak listelenir.
 
@@ -207,6 +211,10 @@ Toplam **19 alarm satiri/protokol**. Ayrica:
 - `MBUnit` grubu (2 satir: `BMS_Check_Read`, `BMS_Check_Write`) da secimden
   bagimsiz **her zaman silinir**; islem kaydinda "MBUnit (BMS iletisim kontrolu)
   - kullanilmiyor" olarak listelenir.
+- `BmsTemp_Hum` blogu (3 satir: `RoomTempFromBms`, `RoomHumFromBms`,
+  `FreshTempFromBms`) da secimden bagimsiz **her zaman silinir**; BMS'ten okunan
+  oda/taze hava degerleri cihaz register listesinde yer almaz. Islem kaydinda
+  "BmsTemp_Hum (BMS'ten oda/taze hava degerleri) - kullanilmiyor" olarak listelenir.
 - Standart listeye yeni `Alarm\...` satiri eklersen pop-up'ta otomatik belirir.
 
 ## Su vanalari (standart listeden otomatik)
