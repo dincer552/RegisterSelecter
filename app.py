@@ -13,7 +13,7 @@ from tkinter import filedialog, messagebox, ttk
 import updater
 from register_engine import (
     ALARM_GROUP_PREFIX,
-    ALWAYS_DROPPED_OBJECTS,
+    ALWAYS_DROPPED_LABELS,
     BRANDS,
     CO_VALVE_GROUP_PREFIX,
     CO_VALVE_OBJECT,
@@ -865,7 +865,7 @@ class App(tk.Tk):
         stage_labels = {g.label for g in self.stage_groups}
         feature_labels = {g.label for g in self.feature_groups}
         brand_labels = {b["label"] for b in BRANDS.values()}
-        dropped_labels = tuple(ALWAYS_DROPPED_OBJECTS.values())
+        dropped_labels = ALWAYS_DROPPED_LABELS
         buckets: dict[str, dict[str, int]] = {
             "sensor": {}, "damper": {}, "stage": {}, "feature": {},
             "valve": {}, "covalve": {}, "rotor": {}, "hum": {}, "alarm": {}, "dropped": {}, "fan": {}

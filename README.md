@@ -67,6 +67,9 @@ cihaza özel Excel listeleri üreten Windows masaüstü programi.
    - `BmsTemp_Hum\RoomTempFromBms`, `RoomHumFromBms` ve `FreshTempFromBms`
      satirleri de **hicbir sekilde** listeye eklenmez (BMS'ten okunan oda/taze
      hava degerleri; ayri secim kutusu yoktur).
+   - `TmpControl\Cooling_Active` ve `TmpControl\Heating_Active` satirlari da
+     **hicbir sekilde** listeye eklenmez (sogutma/isitma aktif geri bildirimi;
+     kademe/secimden bagimsiz daima silinir).
 7. **7. Su Vanalari (CV / HV / CO)** – her vananin kendi satirlari tik kutusu ile
    secilir: tikli vananin pozisyon (`CV_Pos` / `HV_Pos`), geri bildirim
    (`CV_Fdb_1` / `HV_Fdb_1`), `Mode Select` ve `Manuel Referans` satirlari listeye
@@ -133,8 +136,9 @@ Islem Kaydi alaninin tekerlegi kendi metnini kaydirir.
 - Blok tiklari (SAF / EAF / RunAround) kaldirilirsa o blogun tum satirlari silinir;
   blok secili degilse transmitter tiki tek basina hicbir satir geri getirmez.
 - Pop-up'ta tik kaldirilan filtre alarmi satiri silinir; `Alarm_Reset` her zaman
-  kalir, `TempAVG` grubu, `MBUnit\BMS_Check_Read/Write` ve `BmsTemp_Hum`
-  (RoomTemp/RoomHum/FreshTempFromBms) satirlari her zaman
+  kalir, `TempAVG` grubu, `MBUnit\BMS_Check_Read/Write`, `BmsTemp_Hum`
+  (RoomTemp/RoomHum/FreshTempFromBms) ve `TmpControl\Cooling_Active` +
+  `Heating_Active` satirlari her zaman
   silinir (secimden bagimsiz).
 - Tik kaldirilan su vanasinin (CV1/CV2/HV1/HV2) tum satirlari silinir. `CV2`/`HV2`
   kutusu ana vana secilmedigi surece gorunmez ve secilemez; ana tik kaldirilirsa
@@ -143,8 +147,9 @@ Islem Kaydi alaninin tekerlegi kendi metnini kaydirir.
   olarak listelenir.
 - **CO vanasi** tiki kaldirilirsa `TmpControl` altindaki 11 change-over satiri
   silinir (islem kaydinda "CO vanasi - secilmedi"). CV/HV tikleriyle bir ilgisi
-  yoktur; `TmpControl`'in diger satirlari (`Tmp_Set_BMS`, `Cooling_Active` ...)
-  her zaman listeye girer.
+  yoktur; `TmpControl`'in diger satirlari (`Tmp_Set_BMS` ...) her zaman listeye girer.
+  Tek istisna `Cooling_Active` / `Heating_Active`: bu iki satir hicbir secimde
+  listeye girmez.
 - Rotor modu `Yok` ise `RotorControl` satirlarinin 6'si da silinir ("Rotor - rotor
   secilmedi"); `On/Off` ise yalnizca `RotorActive` + `Rotor Alarm` kalir, kalan 4
   satir "Rotor - oransal satirlar (on/off secildi)" olarak listelenir.
@@ -221,6 +226,11 @@ Toplam **19 alarm satiri/protokol**. Ayrica:
   `FreshTempFromBms`) da secimden bagimsiz **her zaman silinir**; BMS'ten okunan
   oda/taze hava degerleri cihaz register listesinde yer almaz. Islem kaydinda
   "BmsTemp_Hum (BMS'ten oda/taze hava degerleri) - kullanilmiyor" olarak listelenir.
+- `TmpControl\Cooling_Active` ve `TmpControl\Heating_Active` (2 satir) da secimden
+  bagimsiz **her zaman silinir**; islem kaydinda "TmpControl (sogutma/isitma aktif
+  geri bildirimi) - kullanilmiyor" olarak listelenir. Elesme obje + token ile
+  yapilir (`ALWAYS_DROPPED_TOKENS`), bu yuzden `RotorControl\RotorActive` ve
+  `TmpControl\ChangeOverActive` gibi diger "Active" satirlari etkilenmez.
 - Standart listeye yeni `Alarm\...` satiri eklersen pop-up'ta otomatik belirir.
 
 ## Su vanalari (standart listeden otomatik)

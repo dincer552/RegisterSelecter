@@ -44,6 +44,9 @@ EXPECTED_TOTAL_TEMPAVG_ROWS = 5
 EXPECTED_TOTAL_MBUNIT_ROWS = 2
 # BmsTemp_Hum (RoomTemp/RoomHum/FreshTempFromBms) satirlari da HIC eklenmez.
 EXPECTED_TOTAL_BMSTEMP_ROWS = 3
+# TmpControl\Cooling_Active + Heating_Active aktif geri bildirimi HIC eklenmez.
+EXPECTED_TOTAL_ACTIVE_ROWS = 2
+ACTIVE_GROUP = "TmpControl (sogutma/isitma aktif geri bildirimi) - kullanilmiyor"
 # EBM 4+4 secildiginde listede kalan tek "silinmeyen" sayilari bu temele gore okunur.
 FAN_BASELINE_REMOVED = (
     EXPECTED_TOTAL_FAN_ROWS
@@ -51,6 +54,7 @@ FAN_BASELINE_REMOVED = (
     + EXPECTED_TOTAL_TEMPAVG_ROWS
     + EXPECTED_TOTAL_MBUNIT_ROWS
     + EXPECTED_TOTAL_BMSTEMP_ROWS
+    + EXPECTED_TOTAL_ACTIVE_ROWS
 )
 
 
@@ -91,13 +95,15 @@ def test_full_selection_keeps_everything(standard, out_name, tmp_path):
     )
     assert res.total_fan_rows == EXPECTED_TOTAL_FAN_ROWS
     assert res.kept_fan_rows == 64  # 4+4 EBM unites x 8 satir
-    # fan disinda yalnizca TempAVG + MBUnit + BmsTemp_Hum blogu kalici olarak silinir
+    # fan disinda yalnizca TempAVG + MBUnit + BmsTemp_Hum blogu ve aktif
+    # geri bildirim satirlari kalici olarak silinir
     assert res.removed_rows == FAN_BASELINE_REMOVED
     assert res.removed_by_group["TempAVG (ortalama oda sicakligi) - kullanilmiyor"] == EXPECTED_TOTAL_TEMPAVG_ROWS
     assert res.removed_by_group["MBUnit (BMS iletisim kontrolu) - kullanilmiyor"] == EXPECTED_TOTAL_MBUNIT_ROWS
     assert res.removed_by_group["BmsTemp_Hum (BMS'ten oda/taze hava degerleri) - kullanilmiyor"] == (
         EXPECTED_TOTAL_BMSTEMP_ROWS
     )
+    assert res.removed_by_group[ACTIVE_GROUP] == EXPECTED_TOTAL_ACTIVE_ROWS
 
 
 def test_mbunit_rows_are_never_included(tmp_path):
@@ -145,6 +151,33 @@ def test_bmstemp_rows_are_never_included(tmp_path, protocol):
             assert res.removed_by_group[BMSTEMP_GROUP] == EXPECTED_TOTAL_BMSTEMP_ROWS, (label, sensor_kwargs)
 
 
+ACTIVE_TOKENS = ("Cooling_Active", "Heating_Active")
+
+
+@pytest.mark.parametrize("protocol", ["modbus", "bacnet"])
+def test_active_feedback_rows_are_never_included(tmp_path, protocol):
+    """`TmpControl\\Cooling_Active` ve `Heating_Active` hicbir secimde listeye girmemeli."""
+    all_signals = {g.obj: [c for c, _ in g.signals] for g in list_sensor_groups(DATA_DIR)}
+    combos = (
+        ("fansiz", None, {"supply_brand": None, "supply_count": 0, "exhaust_brand": None, "exhaust_count": 0}),
+        ("tam fan", None, {}),
+        ("her sey acik", all_signals, {
+            "valve_selection": ["CV1", "CV2", "HV1", "HV2"],
+            "co_valve": True,
+            "rotor_mode": "proportional",
+            "hum_control": True,
+        }),
+    )
+    for label, sensors, extra in combos:
+        res = _sensor_run(tmp_path, protocol, sensors, out_name=f"active_{protocol}_{label}.xlsx", **extra)
+        names = _names(res, protocol)
+        for token in ACTIVE_TOKENS:
+            assert rf"TmpControl\{token}" not in names, (label, token)
+        assert res.removed_by_group[ACTIVE_GROUP] == EXPECTED_TOTAL_ACTIVE_ROWS, label
+        # TmpControl'un diger satirlari (setpoint, vana, CO) etkilenmez
+        assert r"TmpControl\Tmp_Set_BMS" in names
+
+
 def test_ebm_supply_2_exhaust_1(tmp_path):
     res = filter_standard_list(
         protocol="modbus",
@@ -162,6 +195,7 @@ def test_ebm_supply_2_exhaust_1(tmp_path):
         + EXPECTED_TOTAL_TEMPAVG_ROWS
         + EXPECTED_TOTAL_MBUNIT_ROWS
         + EXPECTED_TOTAL_BMSTEMP_ROWS
+        + EXPECTED_TOTAL_ACTIVE_ROWS
     )
 
     wb = load_workbook(res.output)
@@ -889,6 +923,7 @@ def test_aspdoorsw_needs_any_exhaust_fan(tmp_path, protocol):
             + EXPECTED_TOTAL_TEMPAVG_ROWS
             + EXPECTED_TOTAL_MBUNIT_ROWS
             + EXPECTED_TOTAL_BMSTEMP_ROWS
+            + EXPECTED_TOTAL_ACTIVE_ROWS
             + door_rows
         )
 

@@ -1,4 +1,4 @@
-"""Standart AHU register listelerini cihaz konfigürasyonuna gore filtreler.
+r"""Standart AHU register listelerini cihaz konfigürasyonuna gore filtreler.
 
 Silinen satirlar: secilmeyen marka/adet disindaki fan bloklari (EBM, Danfoss,
 Ziehl-Abegg, WellDrive), tiklanmayan sicaklik-nem-CO2 sensor satirlari,
@@ -8,7 +8,8 @@ satiri ve nem kontrolu secilmeyince nem set ayar satirlari.
 Sabit kalan satirlar: AHU start, batarya, SAF/EAF mantigi ve genel alarm
 satirlari. Secimden bagimsiz
 her zaman silinen satirlar: TempAVG blogu, MBUnit (BMS iletisim kontrol)
-satirlari ve BmsTemp_Hum (BMS'ten okunan oda/taze hava degerleri). DamperCont /
+satirlari, BmsTemp_Hum (BMS'ten okunan oda/taze hava degerleri) ve
+TmpControl\Cooling_Active / Heating_Active aktif geri bildirim satirlari. DamperCont /
 BypassDmpCont satirlari sirasiyla karisim ve by-pass motorunun varligina baglidir.
 """
 
@@ -519,6 +520,14 @@ ALWAYS_DROPPED_OBJECTS = {
     # listesinde hicbir zaman istenmez (RoomTemp/RoomHum/FreshTempFromBms).
     "BmsTemp_Hum": "BmsTemp_Hum (BMS'ten oda/taze hava degerleri)",
 }
+# Tekil satirlar icin obje + token eslesmesi; iki satir ayni grup adini paylasir.
+ALWAYS_DROPPED_TOKENS: dict[tuple[str, str], str] = {
+    ("TmpControl", "Cooling_Active"): "TmpControl (sogutma/isitma aktif geri bildirimi)",
+    ("TmpControl", "Heating_Active"): "TmpControl (sogutma/isitma aktif geri bildirimi)",
+}
+ALWAYS_DROPPED_LABELS: tuple[str, ...] = tuple(
+    {*ALWAYS_DROPPED_OBJECTS.values(), *ALWAYS_DROPPED_TOKENS.values()}
+)
 # Sabit kalmasi gereken satirlar (sensor dalgina takilmamasi icin acikca tutulur).
 ALWAYS_KEPT_OBJECTS = {"Alarm_Reset"}
 # AHUStart\... kapak sensorleri: vantilator daima kalir, aspirator yalnizca
@@ -880,7 +889,10 @@ def filter_standard_list(
         feature_state = (
             _feature_state(parsed_obj, parsed_tok or "") if feature_enabled and parsed_obj else None
         )
-        if info is not None:
+        dropped_token = ALWAYS_DROPPED_TOKENS.get((parsed_obj, parsed_tok))
+        if dropped_token is not None:
+            group = f"{dropped_token} - kullanilmiyor"
+        elif info is not None:
             total_fan_rows += 1
             sel_brand, sel_count = selections[info.direction]
             keep = sel_brand is not None and info.brand == sel_brand and info.unit <= sel_count
