@@ -935,16 +935,17 @@ def filter_standard_list(
                 else stage_group.max_stages  # kademe adimi kullanilmadiysa tum kademeler kalir
             )
             total_stage_rows += 1
-            if unit is None:
+            if unit is None and hum_row:
+                # Nem set satirlari kademe sayisindan bagimsizdir; tik tek basina yeter.
+                total_hum_rows += 1
+                if hum_control:
+                    kept_hum_rows += 1
+                    continue
+                keep = False
+                group = f"{HUM_CTRL_GROUP_PREFIX}nem kontrolu secilmedi"
+            elif unit is None:
                 keep = stages >= 1
                 group = f"{stage_group.label} - genel satirlar"
-                if keep and hum_row:
-                    total_hum_rows += 1
-                    if hum_control:
-                        kept_hum_rows += 1
-                    else:
-                        keep = False
-                        group = f"{HUM_CTRL_GROUP_PREFIX}nem kontrolu secilmedi"
             else:
                 keep = unit <= stages
                 group = f"{stage_group.label} #{unit}"

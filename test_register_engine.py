@@ -1232,15 +1232,31 @@ def test_hum_control_unused_keeps_all_rows(tmp_path):
         assert token in _names(res, "modbus")
 
 
-def test_humidifier_zero_still_removes_whole_block(tmp_path):
-    """Kademe 0 iken nem kontrolu secili olsa bile Hum_Mod_Sel satiri kalmaz."""
+def test_humidifier_zero_keeps_hum_set_rows_when_ticked(tmp_path):
+    """Kademe 0 iken bile nem kontrolu tiki 5 nem set satirini listeye getirir."""
     res = _sensor_run(
         tmp_path, "modbus", None, stage_selection={}, hum_control=True, out_name="humctrl_zero_stage.xlsx"
     )
+    assert res.kept_hum_rows == len(HUM_CTRL_TOKENS)
+    names = _names(res, "modbus")
+    for token in HUM_CTRL_TOKENS:
+        assert token in names
+    # kademe satirlari ve blogun diger genel satirlari kademe 0 yuzunden silinir
+    assert r"Hum_Mod_Sel\HumModeSel1.Start" not in names
+    assert r"Hum_Mod_Sel\Room_Abs" not in names
+    assert res.removed_by_group[f"{HUM_GROUP} - genel satirlar"] == 13 - len(HUM_CTRL_TOKENS)
+    assert res.removed_by_group[f"{HUM_GROUP} #1"] == 5
+
+
+def test_hum_set_rows_unticked_at_zero_stage(tmp_path):
+    """Kademe 0 + nem kontrolu kapali: 5 satir 'nem kontrolu secilmedi' grubunda silinir."""
+    res = _sensor_run(
+        tmp_path, "modbus", None, stage_selection={}, hum_control=False, out_name="humctrl_zero_off.xlsx"
+    )
+    assert res.total_hum_rows == len(HUM_CTRL_TOKENS)
     assert res.kept_hum_rows == 0
-    assert res.total_hum_rows == 0, "kademe 0 onceligi: nem kapisi hic devreye girmez"
-    assert "Hum_Mod_Sel" not in _names(res, "modbus")
-    assert res.removed_by_group[f"{HUM_GROUP} - genel satirlar"] == 13  # kademe 0 once kalir
+    assert res.removed_by_group[HUM_CTRL_OFF_GROUP] == len(HUM_CTRL_TOKENS)
+    assert res.removed_by_group[f"{HUM_GROUP} - genel satirlar"] == 13 - len(HUM_CTRL_TOKENS)
 
 
 def test_generate_passes_hum_control(tmp_path):

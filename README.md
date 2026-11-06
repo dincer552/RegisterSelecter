@@ -101,8 +101,9 @@ cihaza özel Excel listeleri üreten Windows masaüstü programi.
 9. **9. Nem Kontrolu** – **Nem kontrolu var** tik kutusu (varsayilan tikli degil).
    Tikli ise `Hum_Mod_Sel\HUM_Set_bms`, `Sup_HUM_Max_bms`, `Sup_HUM_Min_bms`,
    `DB_HUM_SET_bms` ve `HUMContTypeSel_bms` satirlari listeye eklenir; tikli
-   degilse bu 5 satir silinir. Kademe sayisindan bagimsiz bir secimdir, fakat
-   kademe 0 ise blokun hicbir satiri (bu 5 dahil) listeye girmez.
+   degilse bu 5 satir silinir. Secim **kademe sayisindan bagimsizdir**: nemlendirici
+   kademesi 0 olsa bile tik bu 5 satiri getirir; kademe 0 yalnizca nemlendiricinin
+   kademe satirlarini ve diger genel satirlarini (`NumberOf_Hum`, `Room_Abs` ...) siler.
 10. **10. Cikti** – cihaz adi (örn. `AHU-01`) ve cikti klasörü.
 11. **EXCEL LISTELERINI OLUSTUR** butonuna bas.
 
@@ -132,11 +133,12 @@ Islem Kaydi alaninin tekerlegi kendi metnini kaydirir.
 - Isitici/DX kademelerinde secilen kademe sayisini asan satirlar silinir;
   kademe 0 ise grubun genel satirlari da silinir. Nemlendiricide ayni kural
   sayiya gore isler: 2 secilirse 3-8 kademelerinin 30 satiri, 0 secilirse
-  `Hum_Mod_Sel` blogunun 53 satirinin tamamı silinir.
+  `Hum_Mod_Sel` blogunun kademe satirlari ve diger genel satirlari silinir
+  (nem set satirlari hariç, onlar tike baglidir).
 - **Nem kontrolu** tiki kaldirilirsa `HUM_Set_bms`, `Sup_HUM_Max_bms`,
   `Sup_HUM_Min_bms`, `DB_HUM_SET_bms`, `HUMContTypeSel_bms` satirlari silinir
-  (islem kaydinda "Nem kontrolu - nem kontrolu secilmedi"). Kademe 0 ise bu
-  5 satir zaten kademe kuraliyla silinir; tik tek basina satirlari geri getirmez.
+  (islem kaydinda "Nem kontrolu - nem kontrolu secilmedi"). Bu 5 satir kademe
+  sayisindan bagimsizdir: kademe 0 iken bile tik onlari listeye getirir.
 - Blok tiklari (SAF / EAF / RunAround) kaldirilirsa o blogun tum satirlari silinir;
   blok secili degilse transmitter tiki tek basina hicbir satir geri getirmez.
 - Filtre alarmlari **varsayilan tikli degildir**; pop-up'ta yalnizca tiklenen
@@ -320,8 +322,10 @@ tik ile secilir:
 | `DB_HUM_SET_bms` | Dehumidification set |
 | `HUMContTypeSel_bms` | Nem kontrol tipi (0=Supply, 1=Return) |
 
-Tik kaldirilirsa 5 satirin tamamı silinir; tikliyse kademe sayisi >= 1 oldugu
-surduce listeye girer.
+Tik kaldirilirsa 5 satirin tamamı silinir; tikliyse **kademe sayisindan bagimsiz**
+olarak listeye girer (nemlendirici kademesi 0 olsa bile). Kademe 0 iken blogun
+kalan satirlari (kademe satirlari + `NumberOf_Hum`, `Room_Abs` gibi diger genel
+satirlar) "Nemlendirici kademe sayısı - ..." basliklariyla silinmeye devam eder.
 
 ## Rotor modu (standart listeden otomatik)
 

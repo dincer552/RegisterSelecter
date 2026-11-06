@@ -702,7 +702,8 @@ class App(tk.Tk):
             text="Secilirse su satirlar listeye eklenir: "
             + ", ".join(f"{HUM_CTRL_OBJECT}\\{token}" for token in HUM_CTRL_TOKENS)
             + f". Secilmezse bu {len(HUM_CTRL_TOKENS)} nem set ayar satiri silinir. Kademe sayisindan bagimsiz "
-            "bir secimdir, ancak kademe 0 ise zaten hicbir nemlendirici satiri listeye girmez.",
+            "bir secimdir: nemlendirici kademesi 0 olsa bile tik bu 5 satiri getirir; "
+            "kademe 0 yalnizca nemlendiricinin kademe ve diger genel satirlarini siler.",
             bg="white", fg="#4b5563", font=("Segoe UI", 8), wraplength=760, justify="left", anchor="w",
         ).grid(row=1, column=0, columnspan=4, sticky="w", padx=14, pady=(2, 6))
 
