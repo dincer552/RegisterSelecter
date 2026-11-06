@@ -76,6 +76,10 @@ cihaza özel Excel listeleri üreten Windows masaüstü programi.
      kapanir ve tekrar gizlenir.
    - Vana satirlari da standart Excel'den otomatik algilanir; standart listeye
      `TmpControl\CV2_Pos` gibi yeni bir vana satiri eklersen programda belirir.
+   - **`TmpControl\Frost Alarm` (donma alarmi) HV1'e baglidir.** Vana kalibina
+     uymadigi icin ayri bir tabloyla (`VALVE_DEPENDENT_TOKENS`) eslesir: `HV1`
+     tikliyse listeye girer, `HV1` tikli degilse vana satirlariyla birlikte silinir
+     (islem kaydinda "Vana satirlari - Isitma su vanasi 1 (HV1)" grubunda sayilir).
    - **`CO vanasi / change over (11 satir)`** ayri bir tiktir (varsayilan tikli
      degil). Tikli ise `TmpControl` altindaki 11 change-over satiri listeye girer;
      tikli degilse bu 11 satirin tamamı silinir. CV/HV tiklerinden **bagimsizdir**:
@@ -134,7 +138,9 @@ Islem Kaydi alaninin tekerlegi kendi metnini kaydirir.
   silinir (secimden bagimsiz).
 - Tik kaldirilan su vanasinin (CV1/CV2/HV1/HV2) tum satirlari silinir. `CV2`/`HV2`
   kutusu ana vana secilmedigi surece gorunmez ve secilemez; ana tik kaldirilirsa
-  alt vana da otomatik kapanir. Islem kaydinda "Vana satirlari - ..." olarak listelenir.
+  alt vana da otomatik kapanir. `TmpControl\Frost Alarm` (donma alarmi) HV1'e
+  baglidir: `HV1` tikli degilse bu satir da silinir. Islem kaydinda "Vana satirlari - ..."
+  olarak listelenir.
 - **CO vanasi** tiki kaldirilirsa `TmpControl` altindaki 11 change-over satiri
   silinir (islem kaydinda "CO vanasi - secilmedi"). CV/HV tikleriyle bir ilgisi
   yoktur; `TmpControl`'in diger satirlari (`Tmp_Set_BMS`, `Cooling_Active` ...)
@@ -227,10 +233,12 @@ Toplam **19 alarm satiri/protokol**. Ayrica:
 |---|---|---|---|
 | `CV1` | Sogutma su vanasi 1 | 4 (`CV_Pos`, `CV_Fdb_1`, `CVModeSel_BMS`, `CV_Man_Ref_BMS`) | ust seviye tik |
 | `CV2` | Sogutma su vanasi 2 | 1 (`CV_Fdb_2`) | **yalnizca `CV1` secilince gorunur** |
-| `HV1` | Isitma su vanasi 1 | 4 (`HV_Pos`, `HV_Fdb_1`, `HVModeSel_BMS`, `HV_Man_Ref_BMS`) | ust seviye tik |
+| `HV1` | Isitma su vanasi 1 | 5 (`HV_Pos`, `HV_Fdb_1`, `HVModeSel_BMS`, `HV_Man_Ref_BMS`, `Frost Alarm`) | ust seviye tik |
 | `HV2` | Isitma su vanasi 2 | 4 (`HV_Pos2`, `HV_Fdb_2`, `HV2ModeSel_BMS`, `HV2_Man_Ref_BMS`) | **yalnizca `HV1` secilince gorunur** |
 
-Toplam **13 satir/protokol**. `CV2` su an sadece geri bildirim satirina sahip
+Toplam **14 satir/protokol**. `HV1` sayimina vana kalibina uymayan tek satir
+`TmpControl\Frost Alarm` (donma alarmi) de dahildir: `HV1` tikli olmadan bu satir
+listeye girmez. `CV2` su an sadece geri bildirim satirina sahip
 (standart listede `CV2ModeSel` / `CV2_Man_Ref` / `CV_Pos2` yok); bu satirlar
 standart listeye eklendiginde 2. vana kutusunda otomatik gorunur.
 
@@ -254,7 +262,7 @@ standart listeye eklendiginde 2. vana kutusunda otomatik gorunur.
 | `ChangeOverMode` | Change-over modu |
 
 Toplam **11 satir/protokol** (modbus 531-541, BACnet 532-542). Bu tokenlar
-`CV`/`HV` vana kalibina uydugu diye vana tiklerinden ayrilir: liste sabit bir
+`CV`/`HV` vana kalibina uymadigi icin vana tiklerinden ayrilir: liste sabit bir
 token tablosuyla (`CO_VALVE_TOKENS`) eslesir, standart listeye yeni
 `TmpControl\CO...` satiri eklersen tabloya bir satir eklemek yeterlidir.
 

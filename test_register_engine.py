@@ -14,6 +14,7 @@ from register_engine import (
     classify_damper,
     classify_row,
     classify_valve,
+    classify_valve_dependent,
     detect_damper_groups,
     detect_filter_alarms,
     detect_sensor_groups,
@@ -892,16 +893,18 @@ def test_aspdoorsw_needs_any_exhaust_fan(tmp_path, protocol):
         )
 
 
-# ---------- su vanalari: CV1 / CV2 / HV1 / HV2 ----------
+# ---------- su vanalari: CV1 / CV2 / HV1 / HV2 (+ HV1'e bagli Frost Alarm) ----------
 
-# CV1 4 + CV2 1 + HV1 4 + HV2 4 = 13 satir/protokol
-EXPECTED_TOTAL_VALVE_ROWS = 13
+# CV1 4 + CV2 1 + HV1 4 + HV2 4 + Frost Alarm 1 = 14 satir/protokol
+EXPECTED_TOTAL_VALVE_ROWS = 14
 VALVE_ROWS = {
     "CV1": ("CV_Pos", "CV_Fdb_1", "CVModeSel_BMS", "CV_Man_Ref_BMS"),
     "CV2": ("CV_Fdb_2",),
     "HV1": ("HV_Pos", "HV_Fdb_1", "HVModeSel_BMS", "HV_Man_Ref_BMS"),
     "HV2": ("HV_Pos2", "HV_Fdb_2", "HV2ModeSel_BMS", "HV2_Man_Ref_BMS"),
 }
+# Vana kalibina uymayan ama bir vananin tikine bagli tekil satirlar.
+VALVE_DEPENDENT_ROWS = {"HV1": ("Frost Alarm",)}
 
 
 @pytest.mark.parametrize(
@@ -931,6 +934,20 @@ def test_classify_valve(obj, tok, expected):
     assert classify_valve(obj, tok) == expected
 
 
+@pytest.mark.parametrize(
+    "obj,tok,expected",
+    [
+        ("TmpControl", "Frost Alarm", "HV1"),
+        # vana kalibindaki satirlar bagli satir degildir
+        ("TmpControl", "HV_Pos", None),
+        ("TmpControl", "Tmp_Set_BMS", None),
+        ("RunAroundCont", "Water_Frost", None),
+    ],
+)
+def test_classify_valve_dependent(obj, tok, expected):
+    assert classify_valve_dependent(obj, tok) == expected
+
+
 @pytest.mark.parametrize("protocol", ["modbus", "bacnet"])
 def test_detect_valve_groups(protocol):
     cfg = PROTOCOLS[protocol]
@@ -942,24 +959,27 @@ def test_detect_valve_groups(protocol):
     assert groups["CV1"].parent is None
     assert groups["CV1"].label == "Sogutma su vanasi 1 (CV1)"
     assert groups["HV1"].label == "Isitma su vanasi 1 (HV1)"
+    # Frost Alarm HV1 sayimina dahildir
+    assert groups["HV1"].rows == 5
 
 
 def test_list_valve_groups_covers_both_protocols():
     groups = list_valve_groups(DATA_DIR)
     assert [g.key for g in groups] == ["CV1", "CV2", "HV1", "HV2"]
-    assert {g.rows for g in groups} == {1, 4}
+    assert {g.rows for g in groups} == {1, 4, 5}
 
 
 def test_valve_selection_keeps_only_chosen_valves(tmp_path):
     chosen = ["CV1", "HV1", "HV2"]
     res = _sensor_run(tmp_path, "modbus", None, valve_selection=chosen, out_name="valve.xlsx")
     assert res.total_valve_rows == EXPECTED_TOTAL_VALVE_ROWS
-    assert res.kept_valve_rows == 12
+    assert res.kept_valve_rows == 13
     names = _names(res, "modbus")
     for key, tokens in VALVE_ROWS.items():
         for token in tokens:
             present = rf"TmpControl\{token}" in names
             assert present == (key in chosen), (key, token, present)
+    assert r"TmpControl\Frost Alarm" in names, "HV1 secili"
     assert res.removed_by_group[f"{VALVE_GROUP_PREFIX}Sogutma su vanasi 2 (CV2)"] == 1
 
 
@@ -971,6 +991,7 @@ def test_valve_step_unused_keeps_every_valve_row(tmp_path):
     for tokens in VALVE_ROWS.values():
         for token in tokens:
             assert rf"TmpControl\{token}" in names
+    assert r"TmpControl\Frost Alarm" in names
 
 
 def test_valve_none_selection_removes_all_valve_rows(tmp_path):
@@ -982,8 +1003,27 @@ def test_valve_none_selection_removes_all_valve_rows(tmp_path):
     for tokens in VALVE_ROWS.values():
         for token in tokens:
             assert rf"TmpControl\{token}" not in names
+    assert r"TmpControl\Frost Alarm" not in names
     # sicaklik setpoint gibi sabit TmpControl satirlari korunur
     assert r"TmpControl\Tmp_Set_BMS" in names
+
+
+@pytest.mark.parametrize("protocol", ["modbus", "bacnet"])
+def test_frost_alarm_needs_hv1_tick(tmp_path, protocol):
+    r"""`TmpControl\Frost Alarm` yalnizca HV1 tiki secildiginde listeye girer."""
+    only_cv = _sensor_run(tmp_path, protocol, None, valve_selection=["CV1", "CV2"], out_name="frost_cv.xlsx")
+    assert only_cv.total_valve_rows == EXPECTED_TOTAL_VALVE_ROWS
+    assert only_cv.kept_valve_rows == 5
+    names = _names(only_cv, protocol)
+    assert r"TmpControl\Frost Alarm" not in names
+    assert r"TmpControl\CV_Pos" in names
+    # HV1 secilmeyince 4 vana satiri + Frost Alarm birlikte silinir
+    assert only_cv.removed_by_group[f"{VALVE_GROUP_PREFIX}Isitma su vanasi 1 (HV1)"] == 5
+
+    with_hv = _sensor_run(tmp_path, protocol, None, valve_selection=["HV1"], out_name="frost_hv.xlsx")
+    assert with_hv.kept_valve_rows == 5
+    assert r"TmpControl\Frost Alarm" in _names(with_hv, protocol)
+    assert with_hv.removed_by_group[f"{VALVE_GROUP_PREFIX}Sogutma su vanasi 1 (CV1)"] == 4
 
 
 def test_generate_passes_valve_selection(tmp_path):
@@ -999,10 +1039,12 @@ def test_generate_passes_valve_selection(tmp_path):
     )
     for res in results:
         protocol = "modbus" if res.protocol == "MODBUS" else "bacnet"
-        assert res.kept_valve_rows == 8
+        # HV1 (4) + Frost Alarm (1) + HV2 (4)
+        assert res.kept_valve_rows == 9
         names = _names(res, protocol)
         assert "CV_" not in names and "CVModeSel" not in names
         assert r"TmpControl\HV2_Man_Ref_BMS" in names
+        assert r"TmpControl\Frost Alarm" in names
 
 
 # ---------- rotor (isi geri kazanim) modu secimi ----------

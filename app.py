@@ -592,7 +592,8 @@ class App(tk.Tk):
         tk.Label(
             sec,
             text="Her vananin kendi satirlari (Pozisyon, Geri bildirim, Mode Select, Manuel Referans) "
-            "tikle eklenir veya silinir. 2. vana kutusu yalnizca 1. vana secildiginde gorunur olur.",
+            "tikle eklenir veya silinir. 2. vana kutusu yalnizca 1. vana secildiginde gorunur olur. "
+            "`TmpControl\\Frost Alarm` (donma alarmi) HV1 vanasiyla birlikte gelir.",
             bg="white", fg="#4b5563", font=("Segoe UI", 9), wraplength=760, justify="left", anchor="w",
         ).pack(fill="x", padx=10, pady=(6, 2))
 

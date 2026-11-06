@@ -3,8 +3,8 @@
 Silinen satirlar: secilmeyen marka/adet disindaki fan bloklari (EBM, Danfoss,
 Ziehl-Abegg, WellDrive), tiklanmayan sicaklik-nem-CO2 sensor satirlari,
 adetini asan damper (klape) motoru satirlari, nemlendirici kademe satirlari,
-tiklanmayan CO vanasi satirlari ve nem kontrolu secilmeyince nem set ayar
-satirlari.
+tiklanmayan CO vanasi satirlari, HV1 secilmediginde donma alarmi (Frost Alarm)
+satiri ve nem kontrolu secilmeyince nem set ayar satirlari.
 Sabit kalan satirlar: AHU start, batarya, SAF/EAF mantigi ve genel alarm
 satirlari. Secimden bagimsiz
 her zaman silinen satirlar: TempAVG blogu, MBUnit (BMS iletisim kontrol)
@@ -373,6 +373,8 @@ VALVE_KIND_LABELS = {"CV": "Sogutma su vanasi", "HV": "Isitma su vanasi"}
 VALVE_GROUP_PREFIX = "Vana satirlari - "
 # CV_Pos / CV_Fdb_2 / CVModeSel_BMS / HV2_Man_Ref_BMS gibi kalibindaki tokenlar.
 _VALVE_TOKEN_RE = re.compile(r"^(?P<kind>CV|HV)(?P<first>\d)?_?(?P<what>Pos|Fdb|Man_Ref|ModeSel)_?(?P<last>\d)?$")
+# Vana kalibina uymayan ama bir vananin varligina bagli tekil satirlar.
+VALVE_DEPENDENT_TOKENS = {"Frost Alarm": "HV1"}
 
 
 @dataclass
@@ -395,6 +397,13 @@ def classify_valve(obj: str | None, tok: str | None) -> str | None:
     return f"{match['kind']}{int(match['first'] or match['last'] or 1)}"
 
 
+def classify_valve_dependent(obj: str | None, tok: str | None) -> str | None:
+    r"""`TmpControl\Frost Alarm` gibi tek satirin hangi vanaya bagli oldugunu dondurur."""
+    if obj != VALVE_OBJECT or not tok:
+        return None
+    return VALVE_DEPENDENT_TOKENS.get(tok)
+
+
 def _valve_group(key: str, rows: int) -> ValveGroup:
     kind, unit = key[:2], int(key[2:])
     return ValveGroup(
@@ -412,10 +421,11 @@ def _valve_sort_key(key: str) -> tuple[str, int]:
 
 
 def detect_valve_groups(ws, name_col: str, header_row: int) -> list[ValveGroup]:
+    """Vana satirlarini (ve vanaya bagli tekil satirlari) gruplara gore sayar."""
     counts: dict[str, int] = {}
     for row in range(header_row + 1, ws.max_row + 1):
         obj, tok = parse_object_token(ws[f"{name_col}{row}"].value)
-        key = classify_valve(obj, tok)
+        key = classify_valve(obj, tok) or classify_valve_dependent(obj, tok)
         if key:
             counts[key] = counts.get(key, 0) + 1
     return [_valve_group(key, counts[key]) for key in sorted(counts, key=_valve_sort_key)]
@@ -927,6 +937,12 @@ def filter_standard_list(
                 kept_valve_rows += 1
                 continue
             group = f"{VALVE_GROUP_PREFIX}{valve_labels.get(valve_key, valve_key)}"
+        elif valve_enabled and (dep_key := classify_valve_dependent(parsed_obj, parsed_tok)):
+            total_valve_rows += 1
+            if dep_key in chosen_valves:
+                kept_valve_rows += 1
+                continue
+            group = f"{VALVE_GROUP_PREFIX}{valve_labels.get(dep_key, dep_key)}"
         elif co_enabled and classify_co_valve(parsed_obj, parsed_tok):
             total_co_valve_rows += 1
             if co_valve:
