@@ -32,7 +32,7 @@ jobs:
       - name: PyInstaller
         run: >
           pyinstaller --onefile --noconsole --name RegisterSelecter
-          --add-data "data;data" app.py
+          --icon assets/app.ico --add-data "data;data" --add-data "assets;assets" app.py
       - name: Smoke test (EXE acilma)
         shell: pwsh
         run: |

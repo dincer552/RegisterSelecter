@@ -51,12 +51,20 @@ WHEEL_NOTCH_ROWS = 3
 # sakli tikler geri yuklenmesin diye config'e surulen damga.
 DEFAULTS_REV = 1
 
-BG = "#f4f6f8"
-HEADER_BG = "#1f2a37"
-ACCENT = "#0b6e4f"
-GREEN_NEW = "#16a34a"
-GRAY = "#9aa5b1"
-RED = "#b91c1c"
+BG = "#171a21"
+PANEL = "#1e232c"
+FIELD = "#12161d"
+BORDER = "#2b3340"
+TEXT = "#e6eaf0"
+MUTED = "#9aa5b1"
+HEADER_BG = "#101319"
+BTN = "#262d39"
+BTN_HOVER = "#303948"
+ACCENT = "#16a34a"
+ACCENT_HOVER = "#12833c"
+GREEN_NEW = "#22c55e"
+GRAY = "#8b95a5"
+RED = "#f87171"
 
 BRAND_CHOICES = [("Yok", None)] + [(cfg["label"], key) for key, cfg in BRANDS.items()]
 ROTOR_CHOICES = [(label, key) for key, label in ROTOR_MODES.items()]
@@ -67,6 +75,68 @@ def resource_path(relative: str) -> Path:
     if base:
         return Path(base) / relative
     return Path(__file__).resolve().parent / relative
+
+
+def icon_path() -> Path:
+    return resource_path("assets/app.ico")
+
+
+def _apply_theme(root) -> None:
+    """Qoder benzeri koyu tema: klasik ve ttk widget varsayilanlarini boyar."""
+    root.configure(bg=BG)
+    for pattern, value in (
+        ("*Button.background", BTN),
+        ("*Button.foreground", TEXT),
+        ("*Button.activeBackground", BTN_HOVER),
+        ("*Button.activeForeground", TEXT),
+        ("*Button.relief", "flat"),
+        ("*Button.highlightThickness", 0),
+        ("*Button.cursor", "hand2"),
+        ("*Label.foreground", TEXT),
+        ("*Checkbutton.foreground", TEXT),
+        ("*Checkbutton.activeForeground", TEXT),
+        ("*Checkbutton.disabledForeground", GRAY),
+        ("*Checkbutton.selectColor", FIELD),
+        ("*Spinbox.background", FIELD),
+        ("*Spinbox.foreground", TEXT),
+        ("*Spinbox.buttonBackground", PANEL),
+        ("*Spinbox.insertBackground", TEXT),
+        ("*Spinbox.relief", "flat"),
+        ("*Spinbox.highlightThickness", 1),
+        ("*Spinbox.highlightBackground", BORDER),
+        ("*Entry.background", FIELD),
+        ("*Entry.foreground", TEXT),
+        ("*Entry.insertBackground", TEXT),
+        ("*Entry.relief", "flat"),
+        ("*Entry.highlightThickness", 1),
+        ("*Entry.highlightBackground", BORDER),
+    ):
+        root.option_add(pattern, value)
+    style = ttk.Style(root)
+    try:
+        style.theme_use("clam")
+    except tk.TclError:
+        pass
+    style.configure(
+        "TCombobox", fieldbackground=FIELD, background=PANEL, foreground=TEXT, arrowcolor=MUTED,
+        bordercolor=BORDER, lightcolor=BORDER, darkcolor=BORDER,
+        selectbackground=ACCENT, selectforeground="white",
+    )
+    style.map("TCombobox", fieldbackground=[("readonly", FIELD)], foreground=[("disabled", GRAY)])
+    for orient in ("Vertical", "Horizontal"):
+        style.configure(
+            f"{orient}.TScrollbar", background=PANEL, troughcolor=BG, bordercolor=BORDER,
+            arrowcolor=MUTED, lightcolor=PANEL, darkcolor=PANEL,
+        )
+        style.map(f"{orient}.TScrollbar", background=[("active", BTN_HOVER), ("pressed", BTN_HOVER)])
+    style.configure(
+        "Horizontal.TProgressbar", troughcolor=FIELD, background=ACCENT,
+        bordercolor=BORDER, lightcolor=ACCENT, darkcolor=ACCENT,
+    )
+    root.option_add("*TCombobox*Listbox.background", FIELD)
+    root.option_add("*TCombobox*Listbox.foreground", TEXT)
+    root.option_add("*TCombobox*Listbox.selectBackground", ACCENT)
+    root.option_add("*TCombobox*Listbox.selectForeground", "white")
 
 
 def config_file() -> Path:
@@ -106,7 +176,11 @@ class App(tk.Tk):
         self.title(f"{APP_TITLE} v{__version__}")
         self.geometry("960x740")
         self.minsize(800, 560)
-        self.configure(bg=BG)
+        _apply_theme(self)
+        ico = icon_path()
+        if ico.exists():
+            self.iconbitmap(str(ico))
+            self.iconbitmap(default=str(ico))
 
         self._update_info: updater.ReleaseInfo | None = None
         self._update_dialog: tk.Toplevel | None = None
@@ -177,6 +251,7 @@ class App(tk.Tk):
 
         self.check_btn = tk.Button(
             btns, text="Manuel Kontrol", width=14, font=("Segoe UI", 9), relief="flat", cursor="hand2",
+            bg=BTN, fg=TEXT, activebackground=BTN_HOVER, activeforeground=TEXT,
             command=self._manual_check,
         )
         self.check_btn.pack(side="right")
@@ -186,11 +261,11 @@ class App(tk.Tk):
             text="GUNCELLE",
             width=12,
             font=("Segoe UI", 10, "bold"),
-            bg="#374151",
-            fg="#cbd5e1",
+            bg=BTN,
+            fg=TEXT,
             relief="flat",
-            activebackground="#374151",
-            activeforeground="#cbd5e1",
+            activebackground=BTN_HOVER,
+            activeforeground=TEXT,
             state="disabled",
             cursor="hand2",
             command=self._start_update,
@@ -199,7 +274,7 @@ class App(tk.Tk):
 
     # ---------- section 1: sensors ----------
     def _build_sensor_section(self, parent) -> None:
-        sec = tk.LabelFrame(parent, text=" 1. Sicaklik Sensorleri ", bg="white", font=("Segoe UI", 11, "bold"), labelanchor="nw")
+        sec = tk.LabelFrame(parent, text=" 1. Sicaklik Sensorleri ", bg=PANEL, font=("Segoe UI", 11, "bold"), labelanchor="nw", fg=TEXT, relief="flat", bd=0, highlightthickness=0)
         sec.pack(fill="x", padx=2, pady=6)
 
         self.sensor_vars: dict[str, dict[str, tk.BooleanVar]] = {}
@@ -207,23 +282,23 @@ class App(tk.Tk):
         try:
             self.sensor_groups = list_sensor_groups(resource_path("data"))
         except Exception as exc:  # noqa: BLE001
-            tk.Label(sec, text=f"Standart liste okunamadi: {exc}", bg="white", fg=RED).pack(anchor="w", padx=10, pady=8)
+            tk.Label(sec, text=f"Standart liste okunamadi: {exc}", bg=PANEL, fg=RED).pack(anchor="w", padx=10, pady=8)
             return
 
-        head = tk.Frame(sec, bg="white")
+        head = tk.Frame(sec, bg=PANEL)
         head.pack(fill="x", padx=8, pady=(6, 2))
         tk.Label(
             head,
             text="Standart Excel'de bulunan sensorler listelendi. Cihazinda olmayanlarin tikini kaldir.",
-            bg="white", fg="#4b5563", font=("Segoe UI", 9),
+            bg=PANEL, fg=MUTED, font=("Segoe UI", 9),
         ).pack(side="left")
         tk.Button(head, text="Tumunu Kaldir", font=("Segoe UI", 8), command=lambda: self._set_all_sensors(False)).pack(side="right", padx=3)
         tk.Button(head, text="Tumunu Sec", font=("Segoe UI", 8), command=lambda: self._set_all_sensors(True)).pack(side="right", padx=3)
 
-        grid = tk.Frame(sec, bg="white")
+        grid = tk.Frame(sec, bg=PANEL)
         grid.pack(fill="x", padx=10, pady=(2, 8))
         for group in self.sensor_groups:
-            row = tk.Frame(grid, bg="white")
+            row = tk.Frame(grid, bg=PANEL)
             row.pack(fill="x", pady=1)
             vars_map: dict[str, tk.BooleanVar] = {}
             if len(group.signals) == 1:
@@ -231,18 +306,18 @@ class App(tk.Tk):
                 var = tk.BooleanVar(value=True)
                 vars_map[code] = var
                 tk.Checkbutton(
-                    row, text=group.label, variable=var, bg="white", anchor="w",
-                    font=("Segoe UI", 10), activebackground="white", selectcolor="white",
+                    row, text=group.label, variable=var, bg=PANEL, anchor="w",
+                    font=("Segoe UI", 10), activebackground=PANEL, selectcolor=FIELD,
                 ).pack(side="left")
             else:
                 sigs = ", ".join(lbl for _c, lbl in group.signals)
-                tk.Label(row, text=f"{group.label} ({sigs})", bg="white", fg="#374151", font=("Segoe UI", 8), width=44, anchor="w").pack(side="left")
+                tk.Label(row, text=f"{group.label} ({sigs})", bg=PANEL, fg=MUTED, font=("Segoe UI", 8), width=44, anchor="w").pack(side="left")
                 for code, label in group.signals:
                     var = tk.BooleanVar(value=True)
                     vars_map[code] = var
                     tk.Checkbutton(
-                        row, text=label, variable=var, bg="white",
-                        font=("Segoe UI", 9), activebackground="white", selectcolor="white",
+                        row, text=label, variable=var, bg=PANEL,
+                        font=("Segoe UI", 9), activebackground=PANEL, selectcolor=FIELD,
                     ).pack(side="left", padx=2)
             self.sensor_vars[group.obj] = vars_map
 
@@ -259,7 +334,7 @@ class App(tk.Tk):
 
     # ---------- section 2: fans ----------
     def _build_fan_section(self, parent) -> None:
-        sec = tk.LabelFrame(parent, text=" 2. Fan Secimi ", bg="white", font=("Segoe UI", 11, "bold"), labelanchor="nw")
+        sec = tk.LabelFrame(parent, text=" 2. Fan Secimi ", bg=PANEL, font=("Segoe UI", 11, "bold"), labelanchor="nw", fg=TEXT, relief="flat", bd=0, highlightthickness=0)
         sec.pack(fill="x", padx=2, pady=6)
 
         self.supply_brand_var = tk.StringVar(value=BRANDS["ebm"]["label"])
@@ -274,7 +349,7 @@ class App(tk.Tk):
             ("Adet", 6),
         ]
         for text, row in rows:
-            tk.Label(sec, text=text, bg="white", font=("Segoe UI", 10)).grid(row=row, column=0, sticky="w", padx=14, pady=4)
+            tk.Label(sec, text=text, bg=PANEL, font=("Segoe UI", 10)).grid(row=row, column=0, sticky="w", padx=14, pady=4)
 
         self.supply_combo = self._brand_combo(sec, self.supply_brand_var, row=2)
         self.exhaust_combo = self._brand_combo(sec, self.exhaust_brand_var, row=5)
@@ -288,7 +363,7 @@ class App(tk.Tk):
         tk.Label(
             sec,
             text="Secilmeyen marka ve adetten fazla unite satirlari (alarm satirlari dahil) silinir.",
-            bg="white", fg="#4b5563", font=("Segoe UI", 8),
+            bg=PANEL, fg=MUTED, font=("Segoe UI", 8),
         ).grid(row=7, column=0, columnspan=4, sticky="w", padx=14, pady=(2, 6))
 
     def _brand_combo(self, parent, var, row):
@@ -320,7 +395,7 @@ class App(tk.Tk):
 
     # ---------- section 3: dampers ----------
     def _build_damper_section(self, parent) -> None:
-        sec = tk.LabelFrame(parent, text=" 3. Damper (Klape) Motorlari ", bg="white", font=("Segoe UI", 11, "bold"), labelanchor="nw")
+        sec = tk.LabelFrame(parent, text=" 3. Damper (Klape) Motorlari ", bg=PANEL, font=("Segoe UI", 11, "bold"), labelanchor="nw", fg=TEXT, relief="flat", bd=0, highlightthickness=0)
         sec.pack(fill="x", padx=2, pady=6)
 
         self.damper_vars: dict[str, tuple[tk.BooleanVar, tk.StringVar]] = {}
@@ -328,10 +403,10 @@ class App(tk.Tk):
         try:
             self.damper_groups = list_damper_groups(resource_path("data"))
         except Exception as exc:  # noqa: BLE001
-            tk.Label(sec, text=f"Standart liste okunamadi: {exc}", bg="white", fg=RED).pack(anchor="w", padx=10, pady=8)
+            tk.Label(sec, text=f"Standart liste okunamadi: {exc}", bg=PANEL, fg=RED).pack(anchor="w", padx=10, pady=8)
             return
 
-        head = tk.Frame(sec, bg="white")
+        head = tk.Frame(sec, bg=PANEL)
         head.pack(fill="x", padx=8, pady=(6, 2))
         tk.Label(
             head,
@@ -340,20 +415,20 @@ class App(tk.Tk):
             "Karisim motoru 0 ise DamperCont satirlarinin hepsi, bypass motoru 0 ise "
             "BypassDmpCont satirlarinin hepsi silinir; CO2_Set_BMS ve DmpContTypeSel "
             "ayrica en az bir CO2 sensoru secilmesini ister.",
-            bg="white", fg="#4b5563", font=("Segoe UI", 9), wraplength=760, justify="left", anchor="w",
+            bg=PANEL, fg=MUTED, font=("Segoe UI", 9), wraplength=760, justify="left", anchor="w",
         ).pack(side="left")
 
-        grid = tk.Frame(sec, bg="white")
+        grid = tk.Frame(sec, bg=PANEL)
         grid.pack(fill="x", padx=10, pady=(4, 10))
-        tk.Label(grid, text="Taraf", bg="white", font=("Segoe UI", 8, "bold")).grid(row=0, column=0, sticky="w", padx=4)
-        tk.Label(grid, text="Motor adet", bg="white", font=("Segoe UI", 8, "bold")).grid(row=0, column=1, sticky="w", padx=4)
+        tk.Label(grid, text="Taraf", bg=PANEL, font=("Segoe UI", 8, "bold")).grid(row=0, column=0, sticky="w", padx=4)
+        tk.Label(grid, text="Motor adet", bg=PANEL, font=("Segoe UI", 8, "bold")).grid(row=0, column=1, sticky="w", padx=4)
         self.damper_spins: dict[str, tk.Spinbox] = {}
         for index, group in enumerate(self.damper_groups, start=1):
             enabled = tk.BooleanVar(value=True)
             count = tk.StringVar(value="1")
             tk.Checkbutton(
-                grid, text=group.label, variable=enabled, bg="white", font=("Segoe UI", 10),
-                activebackground="white", selectcolor="white",
+                grid, text=group.label, variable=enabled, bg=PANEL, font=("Segoe UI", 10),
+                activebackground=PANEL, selectcolor=FIELD,
                 command=lambda g=group, v=enabled: self._on_damper_toggle(g, v),
             ).grid(row=index, column=0, sticky="w", padx=4, pady=2)
             spin = tk.Spinbox(
@@ -361,7 +436,7 @@ class App(tk.Tk):
                 width=5, font=("Segoe UI", 10), justify="center",
             )
             spin.grid(row=index, column=1, sticky="w", padx=4, pady=2)
-            tk.Label(grid, text=f"(max {group.max_units})", bg="white", fg=GRAY, font=("Segoe UI", 8)).grid(row=index, column=2, sticky="w")
+            tk.Label(grid, text=f"(max {group.max_units})", bg=PANEL, fg=GRAY, font=("Segoe UI", 8)).grid(row=index, column=2, sticky="w")
             self.damper_vars[group.key] = (enabled, count)
             self.damper_spins[group.key] = spin
 
@@ -381,7 +456,7 @@ class App(tk.Tk):
 
     # ---------- section 4: kademeli gruplar (isitici / DX / nemlendirici) ----------
     def _build_stage_section(self, parent) -> None:
-        sec = tk.LabelFrame(parent, text=" 4. Kademe Sayilari (Isitici / DX / Nemlendirici) ", bg="white", font=("Segoe UI", 11, "bold"), labelanchor="nw")
+        sec = tk.LabelFrame(parent, text=" 4. Kademe Sayilari (Isitici / DX / Nemlendirici) ", bg=PANEL, font=("Segoe UI", 11, "bold"), labelanchor="nw", fg=TEXT, relief="flat", bd=0, highlightthickness=0)
         sec.pack(fill="x", padx=2, pady=6)
 
         self.stage_vars: dict[str, tk.StringVar] = {}
@@ -389,7 +464,7 @@ class App(tk.Tk):
         try:
             self.stage_groups = list_stage_groups(resource_path("data"))
         except Exception as exc:  # noqa: BLE001
-            tk.Label(sec, text=f"Standart liste okunamadi: {exc}", bg="white", fg=RED).pack(anchor="w", padx=10, pady=8)
+            tk.Label(sec, text=f"Standart liste okunamadi: {exc}", bg=PANEL, fg=RED).pack(anchor="w", padx=10, pady=8)
             return
 
         tk.Label(
@@ -398,19 +473,19 @@ class App(tk.Tk):
             "DxAlarm/DXDefrost, HeaterN_ok ve nemlendirici satirlari (HumModeSelN.Start/ManPosBMS/"
             "ModeSelBMS, Hum_RunStsN, Hum_AlarmN) silinir; mod/durum/kapasite/yuksek sicaklik alarm "
             "ve nem set ayar satirlari en az bir kademe seciliyse kalir. Nemlendirici varsayilan 0'dir.",
-            bg="white", fg="#4b5563", font=("Segoe UI", 9), wraplength=760, justify="left", anchor="w",
+            bg=PANEL, fg=MUTED, font=("Segoe UI", 9), wraplength=760, justify="left", anchor="w",
         ).pack(fill="x", padx=10, pady=(6, 2))
 
-        grid = tk.Frame(sec, bg="white")
+        grid = tk.Frame(sec, bg=PANEL)
         grid.pack(fill="x", padx=10, pady=(4, 10))
         for index, group in enumerate(self.stage_groups, start=1):
             count = tk.StringVar(value=str(stage_default(group)))
-            tk.Label(grid, text=group.label, bg="white", font=("Segoe UI", 10)).grid(row=index, column=0, sticky="w", padx=4, pady=2)
+            tk.Label(grid, text=group.label, bg=PANEL, font=("Segoe UI", 10)).grid(row=index, column=0, sticky="w", padx=4, pady=2)
             tk.Spinbox(
                 grid, values=[str(i) for i in range(0, group.max_stages + 1)], textvariable=count,
                 width=5, font=("Segoe UI", 10), justify="center",
             ).grid(row=index, column=1, sticky="w", padx=4, pady=2)
-            tk.Label(grid, text=f"0 = Yok, max {group.max_stages}", bg="white", fg=GRAY, font=("Segoe UI", 8)).grid(row=index, column=2, sticky="w")
+            tk.Label(grid, text=f"0 = Yok, max {group.max_stages}", bg=PANEL, fg=GRAY, font=("Segoe UI", 8)).grid(row=index, column=2, sticky="w")
             self.stage_vars[group.obj] = count
 
     def _stage_selection(self) -> dict[str, int]:
@@ -423,7 +498,7 @@ class App(tk.Tk):
 
     # ---------- section 5: blok özellikleri (SAF / EAF / RunAround) ----------
     def _build_feature_section(self, parent) -> None:
-        sec = tk.LabelFrame(parent, text=" 5. SAF / EAF ve Basincl Sensoru ", bg="white", font=("Segoe UI", 11, "bold"), labelanchor="nw")
+        sec = tk.LabelFrame(parent, text=" 5. SAF / EAF ve Basincl Sensoru ", bg=PANEL, font=("Segoe UI", 11, "bold"), labelanchor="nw", fg=TEXT, relief="flat", bd=0, highlightthickness=0)
         sec.pack(fill="x", padx=2, pady=6)
 
         self.feature_vars: dict[str, dict[str, tk.BooleanVar]] = {}
@@ -432,21 +507,21 @@ class App(tk.Tk):
         try:
             self.feature_groups = list_feature_groups(resource_path("data"))
         except Exception as exc:  # noqa: BLE001
-            tk.Label(sec, text=f"Standart liste okunamadi: {exc}", bg="white", fg=RED).pack(anchor="w", padx=10, pady=8)
+            tk.Label(sec, text=f"Standart liste okunamadi: {exc}", bg=PANEL, fg=RED).pack(anchor="w", padx=10, pady=8)
             return
 
         tk.Label(
             sec,
             text="Kullanmadigin bloklarin tum satirlari (alarm satirlari dahil) silinir. "
             "QBM97xx basincl transmitteri ayrica secilir; blok secili degilse transmitter satirlari da kalmaz.",
-            bg="white", fg="#4b5563", font=("Segoe UI", 9), wraplength=760, justify="left", anchor="w",
+            bg=PANEL, fg=MUTED, font=("Segoe UI", 9), wraplength=760, justify="left", anchor="w",
         ).pack(fill="x", padx=10, pady=(6, 2))
 
-        box = tk.Frame(sec, bg="white")
+        box = tk.Frame(sec, bg=PANEL)
         box.pack(fill="x", padx=12, pady=(2, 10))
         for group in self.feature_groups:
             vars_by_code: dict[str, tk.BooleanVar] = {}
-            rows = tk.Frame(box, bg="white")
+            rows = tk.Frame(box, bg=PANEL)
             rows.pack(fill="x", pady=2)
             for code, option_label, count in group.options:
                 var = tk.BooleanVar(value=True)
@@ -456,8 +531,8 @@ class App(tk.Tk):
                 text = f"{group.label if code == 'main' else option_label} ({count} satir)"
                 check = tk.Checkbutton(
                     rows, text=text,
-                    variable=var, bg="white", font=("Segoe UI", 10, weight),
-                    activebackground="white", selectcolor="white",
+                    variable=var, bg=PANEL, font=("Segoe UI", 10, weight),
+                    activebackground=PANEL, selectcolor=FIELD,
                 )
                 check.pack(anchor="w", padx=indent)
                 if code == "main":
@@ -482,7 +557,7 @@ class App(tk.Tk):
 
     # ---------- section 6: filtre alarmlari (pop-up) ----------
     def _build_alarm_section(self, parent) -> None:
-        sec = tk.LabelFrame(parent, text=" 6. Filtre Alarmlari ", bg="white", font=("Segoe UI", 11, "bold"), labelanchor="nw")
+        sec = tk.LabelFrame(parent, text=" 6. Filtre Alarmlari ", bg=PANEL, font=("Segoe UI", 11, "bold"), labelanchor="nw", fg=TEXT, relief="flat", bd=0, highlightthickness=0)
         sec.pack(fill="x", padx=2, pady=6)
 
         self.alarm_vars: dict[str, tk.BooleanVar] = {}
@@ -494,24 +569,24 @@ class App(tk.Tk):
             "varsayilan hicbiri tikli degildir, secilmeyen alarm satiri listeden silinir. "
             "Alarm_Reset registeri her zaman eklenir; TempAVG, MBUnit (BMS_Check_Read/Write), "
             "BmsTemp_Hum, Cooling/Heating_Active ve WetBulp_Temp satirlari ise hicbir sekilde eklenmez.",
-            bg="white", fg="#4b5563", font=("Segoe UI", 9), wraplength=760, justify="left", anchor="w",
+            bg=PANEL, fg=MUTED, font=("Segoe UI", 9), wraplength=760, justify="left", anchor="w",
         ).pack(fill="x", padx=10, pady=(6, 2))
 
-        row = tk.Frame(sec, bg="white")
+        row = tk.Frame(sec, bg=PANEL)
         row.pack(fill="x", padx=10, pady=(2, 10))
         btn = tk.Button(
             row, text="FILTRE ALARMLARINI SEC", font=("Segoe UI", 10, "bold"),
-            bg=ACCENT, fg="white", relief="flat", activebackground="#0a5f45", activeforeground="white",
+            bg=ACCENT, fg="white", relief="flat", activebackground=ACCENT_HOVER, activeforeground="white",
             cursor="hand2", padx=12, pady=4, command=self._open_alarm_popup,
         )
         btn.pack(side="left")
-        self.alarm_summary = tk.Label(row, text="", bg="white", fg=GRAY, font=("Segoe UI", 9))
+        self.alarm_summary = tk.Label(row, text="", bg=PANEL, fg=GRAY, font=("Segoe UI", 9))
         self.alarm_summary.pack(side="left", padx=12)
 
         try:
             self.alarm_alarms = list_filter_alarms(resource_path("data"))
         except Exception as exc:  # noqa: BLE001
-            tk.Label(sec, text=f"Standart liste okunamadi: {exc}", bg="white", fg=RED).pack(anchor="w", padx=10, pady=8)
+            tk.Label(sec, text=f"Standart liste okunamadi: {exc}", bg=PANEL, fg=RED).pack(anchor="w", padx=10, pady=8)
             return
         btn.configure(text=f"FILTRE ALARMLARINI SEC ({len(self.alarm_alarms)})")
         for alarm in self.alarm_alarms:
@@ -539,7 +614,7 @@ class App(tk.Tk):
         self.alarm_popup = dlg
 
         tk.Label(
-            dlg, text="Cihazinda bulunan filtre alarmlarini isaretle.", bg=BG, fg="#1f2a37", font=("Segoe UI", 10, "bold")
+            dlg, text="Cihazinda bulunan filtre alarmlarini isaretle.", bg=BG, fg=TEXT, font=("Segoe UI", 10, "bold")
         ).pack(padx=14, pady=(12, 4), anchor="w")
 
         box = ScrollFrame(dlg)
@@ -548,7 +623,7 @@ class App(tk.Tk):
         for alarm in self.alarm_alarms:
             tk.Checkbutton(
                 box.inner, text=f"{alarm.label}   ({alarm.token})", variable=self.alarm_vars[alarm.token],
-                bg="white", font=("Segoe UI", 10), activebackground="white", selectcolor="white",
+                bg=BG, font=("Segoe UI", 10), activebackground=BG, selectcolor=FIELD,
                 command=self._refresh_alarm_summary,
             ).pack(anchor="w", padx=10, pady=2, fill="x")
 
@@ -579,7 +654,7 @@ class App(tk.Tk):
 
     # ---------- section 7: su vanalari (CV / HV / CO) ----------
     def _build_valve_section(self, parent) -> None:
-        sec = tk.LabelFrame(parent, text=" 7. Su Vanalari (CV / HV / CO) ", bg="white", font=("Segoe UI", 11, "bold"), labelanchor="nw")
+        sec = tk.LabelFrame(parent, text=" 7. Su Vanalari (CV / HV / CO) ", bg=PANEL, font=("Segoe UI", 11, "bold"), labelanchor="nw", fg=TEXT, relief="flat", bd=0, highlightthickness=0)
         sec.pack(fill="x", padx=2, pady=6)
 
         self.co_valve_var = tk.BooleanVar(value=False)
@@ -590,7 +665,7 @@ class App(tk.Tk):
         try:
             self.valve_groups = list_valve_groups(resource_path("data"))
         except Exception as exc:  # noqa: BLE001
-            tk.Label(sec, text=f"Standart liste okunamadi: {exc}", bg="white", fg=RED).pack(anchor="w", padx=10, pady=8)
+            tk.Label(sec, text=f"Standart liste okunamadi: {exc}", bg=PANEL, fg=RED).pack(anchor="w", padx=10, pady=8)
             return
 
         tk.Label(
@@ -598,10 +673,10 @@ class App(tk.Tk):
             text="Her vananin kendi satirlari (Pozisyon, Geri bildirim, Mode Select, Manuel Referans) "
             "tikle eklenir veya silinir. 2. vana kutusu yalnizca 1. vana secildiginde gorunur olur. "
             "`TmpControl\\Frost Alarm` (donma alarmi) HV1 vanasiyla birlikte gelir.",
-            bg="white", fg="#4b5563", font=("Segoe UI", 9), wraplength=760, justify="left", anchor="w",
+            bg=PANEL, fg=MUTED, font=("Segoe UI", 9), wraplength=760, justify="left", anchor="w",
         ).pack(fill="x", padx=10, pady=(6, 2))
 
-        box = tk.Frame(sec, bg="white")
+        box = tk.Frame(sec, bg=PANEL)
         box.pack(fill="x", padx=12, pady=(2, 10))
         for group in self.valve_groups:
             var = tk.BooleanVar(value=False)
@@ -611,10 +686,10 @@ class App(tk.Tk):
                 box,
                 text=f"{group.label} ({group.rows} satir)",
                 variable=var,
-                bg="white",
+                bg=PANEL,
                 font=("Segoe UI", 10, "normal" if group.parent else "bold"),
-                activebackground="white",
-                selectcolor="white",
+                activebackground=PANEL,
+                selectcolor=FIELD,
             )
             check.pack(**opts)
             self.valve_checks[group.key] = check
@@ -630,15 +705,15 @@ class App(tk.Tk):
             box,
             text=f"CO vanasi / change over ({len(CO_VALVE_TOKENS)} satir)",
             variable=self.co_valve_var,
-            bg="white",
+            bg=PANEL,
             font=("Segoe UI", 10, "bold"),
-            activebackground="white",
-            selectcolor="white",
+            activebackground=PANEL,
+            selectcolor=FIELD,
         ).pack(anchor="w", pady=(8, 0))
         tk.Label(
             box,
             text="CO tiki " + ", ".join(CO_VALVE_TOKENS) + f" satirlarini {CO_VALVE_OBJECT} altindan listeye ekler.",
-            bg="white", fg="#4b5563", font=("Segoe UI", 8), wraplength=720, justify="left", anchor="w",
+            bg=PANEL, fg=MUTED, font=("Segoe UI", 8), wraplength=720, justify="left", anchor="w",
         ).pack(anchor="w", pady=(2, 0))
 
     def _co_valve_enabled(self) -> bool:
@@ -662,11 +737,11 @@ class App(tk.Tk):
 
     # ---------- section 8: rotor ----------
     def _build_rotor_section(self, parent) -> None:
-        sec = tk.LabelFrame(parent, text=" 8. Rotor (Isi Geri Kazanim) ", bg="white", font=("Segoe UI", 11, "bold"), labelanchor="nw")
+        sec = tk.LabelFrame(parent, text=" 8. Rotor (Isi Geri Kazanim) ", bg=PANEL, font=("Segoe UI", 11, "bold"), labelanchor="nw", fg=TEXT, relief="flat", bd=0, highlightthickness=0)
         sec.pack(fill="x", padx=2, pady=6)
 
         self.rotor_var = tk.StringVar(value=ROTOR_MODES[ROTOR_DEFAULT_MODE])
-        tk.Label(sec, text="Rotor kontrol modu", bg="white", font=("Segoe UI", 10)).grid(row=0, column=0, sticky="w", padx=14, pady=5)
+        tk.Label(sec, text="Rotor kontrol modu", bg=PANEL, font=("Segoe UI", 10)).grid(row=0, column=0, sticky="w", padx=14, pady=5)
         self.rotor_combo = ttk.Combobox(
             sec,
             textvariable=self.rotor_var,
@@ -681,7 +756,7 @@ class App(tk.Tk):
             text="Yok: rotor satirlarinin hicbiri eklenmez.   Oransal: RotorControl satirlarinin hepsi "
             "(Mode Select, Manuel Set, Max Speed, Pozisyon, Active, Alarm) eklenir.   "
             "On/Off: yalnizca RotorActive ve Rotor Alarm eklenir.",
-            bg="white", fg="#4b5563", font=("Segoe UI", 8), wraplength=760, justify="left", anchor="w",
+            bg=PANEL, fg=MUTED, font=("Segoe UI", 8), wraplength=760, justify="left", anchor="w",
         ).grid(row=1, column=0, columnspan=4, sticky="w", padx=14, pady=(2, 6))
 
     def _rotor_mode(self) -> str:
@@ -689,13 +764,13 @@ class App(tk.Tk):
 
     # ---------- section 9: nem kontrolu ----------
     def _build_hum_control_section(self, parent) -> None:
-        sec = tk.LabelFrame(parent, text=" 9. Nem Kontrolu ", bg="white", font=("Segoe UI", 11, "bold"), labelanchor="nw")
+        sec = tk.LabelFrame(parent, text=" 9. Nem Kontrolu ", bg=PANEL, font=("Segoe UI", 11, "bold"), labelanchor="nw", fg=TEXT, relief="flat", bd=0, highlightthickness=0)
         sec.pack(fill="x", padx=2, pady=6)
 
         self.hum_control_var = tk.BooleanVar(value=False)
         tk.Checkbutton(
             sec, text="Nem kontrolu var", variable=self.hum_control_var,
-            bg="white", font=("Segoe UI", 10), activebackground="white",
+            bg=PANEL, font=("Segoe UI", 10), activebackground=PANEL, selectcolor=FIELD,
         ).grid(row=0, column=0, columnspan=4, sticky="w", padx=14, pady=5)
         tk.Label(
             sec,
@@ -704,7 +779,7 @@ class App(tk.Tk):
             + f". Secilmezse bu {len(HUM_CTRL_TOKENS)} nem set ayar satiri silinir. Kademe sayisindan bagimsiz "
             "bir secimdir: nemlendirici kademesi 0 olsa bile tik bu 5 satiri getirir; "
             "kademe 0 yalnizca nemlendiricinin kademe ve diger genel satirlarini siler.",
-            bg="white", fg="#4b5563", font=("Segoe UI", 8), wraplength=760, justify="left", anchor="w",
+            bg=PANEL, fg=MUTED, font=("Segoe UI", 8), wraplength=760, justify="left", anchor="w",
         ).grid(row=1, column=0, columnspan=4, sticky="w", padx=14, pady=(2, 6))
 
     def _hum_control_enabled(self) -> bool:
@@ -712,22 +787,22 @@ class App(tk.Tk):
 
     # ---------- section 10: output ----------
     def _build_output_section(self, parent) -> None:
-        sec = tk.LabelFrame(parent, text=" 10. Cikti ", bg="white", font=("Segoe UI", 11, "bold"), labelanchor="nw")
+        sec = tk.LabelFrame(parent, text=" 10. Cikti ", bg=PANEL, font=("Segoe UI", 11, "bold"), labelanchor="nw", fg=TEXT, relief="flat", bd=0, highlightthickness=0)
         sec.pack(fill="x", padx=2, pady=6)
 
         self.device_var = tk.StringVar(value="AHU-01")
         self.outdir_var = tk.StringVar(value="")
 
-        tk.Label(sec, text="Cihaz adi", bg="white", font=("Segoe UI", 10)).grid(row=0, column=0, sticky="w", padx=14, pady=5)
+        tk.Label(sec, text="Cihaz adi", bg=PANEL, font=("Segoe UI", 10)).grid(row=0, column=0, sticky="w", padx=14, pady=5)
         tk.Entry(sec, textvariable=self.device_var, width=24, font=("Segoe UI", 10)).grid(row=0, column=1, columnspan=3, sticky="w", padx=4, pady=5)
 
-        tk.Label(sec, text="Cikti klasoru", bg="white", font=("Segoe UI", 10)).grid(row=1, column=0, sticky="w", padx=14, pady=5)
-        path_row = tk.Frame(sec, bg="white")
+        tk.Label(sec, text="Cikti klasoru", bg=PANEL, font=("Segoe UI", 10)).grid(row=1, column=0, sticky="w", padx=14, pady=5)
+        path_row = tk.Frame(sec, bg=PANEL)
         path_row.grid(row=1, column=1, columnspan=3, sticky="w", padx=4, pady=5)
         tk.Entry(path_row, textvariable=self.outdir_var, width=48, font=("Segoe UI", 9)).pack(side="left")
         tk.Button(path_row, text="Gozat...", font=("Segoe UI", 9), command=self._browse_outdir).pack(side="left", padx=6)
 
-        actions = tk.Frame(sec, bg="white")
+        actions = tk.Frame(sec, bg=PANEL)
         actions.grid(row=2, column=0, columnspan=4, sticky="ew", padx=14, pady=10)
         self.gen_btn = tk.Button(
             actions,
@@ -736,7 +811,7 @@ class App(tk.Tk):
             bg=ACCENT,
             fg="white",
             relief="flat",
-            activebackground="#0a5f45",
+            activebackground=ACCENT_HOVER,
             activeforeground="white",
             cursor="hand2",
             padx=18,
@@ -749,7 +824,10 @@ class App(tk.Tk):
         log_sec = tk.Frame(parent, bg=BG)
         log_sec.pack(fill="both", expand=True, padx=2, pady=(2, 6))
         tk.Label(log_sec, text="Islem Kaydi", bg=BG, font=("Segoe UI", 10, "bold")).pack(anchor="w")
-        self.log = tk.Text(log_sec, font=("Consolas", 9), bg="#0f172a", fg="#e2e8f0", relief="flat", height=9)
+        self.log = tk.Text(
+            log_sec, font=("Consolas", 9), bg=FIELD, fg=TEXT, relief="flat", height=9,
+            insertbackground=TEXT, highlightthickness=0,
+        )
         self.log.pack(fill="both", expand=True, pady=(4, 0))
 
     def _browse_outdir(self) -> None:
@@ -1007,7 +1085,7 @@ class App(tk.Tk):
         dlg.transient(self)
         dlg.attributes("-topmost", True)
         dlg.protocol("WM_DELETE_WINDOW", lambda: None)
-        tk.Label(dlg, text=f"{APP_TITLE} v{ver}", bg=BG, fg="#1f2a37", font=("Segoe UI", 11, "bold")).pack(padx=18, pady=(14, 2))
+        tk.Label(dlg, text=f"{APP_TITLE} v{ver}", bg=BG, fg=TEXT, font=("Segoe UI", 11, "bold")).pack(padx=18, pady=(14, 2))
         self.progress_bar = ttk.Progressbar(dlg, orient="horizontal", length=340, mode="determinate", maximum=100)
         self.progress_bar.pack(padx=18, pady=8)
         first = f"{fmt_mb(info.size)} indirilecek" if info.size else "Indiriliyor..."
@@ -1170,12 +1248,15 @@ def _run_swap_helper(target: Path) -> None:
     """Indirilen EXE bu modda acilir: eski EXE'yi kendisiyle degistirip ondan yeniden baslar."""
     root = tk.Tk()
     root.title(f"{APP_TITLE} guncelleniyor")
-    root.configure(bg=BG)
+    _apply_theme(root)
+    ico = icon_path()
+    if ico.exists():
+        root.iconbitmap(str(ico))
     root.resizable(False, False)
     root.attributes("-topmost", True)
     root.protocol("WM_DELETE_WINDOW", lambda: None)
     tk.Label(
-        root, text=f"{APP_TITLE} v{__version__} kuruluyor", bg=BG, fg="#1f2a37", font=("Segoe UI", 10, "bold")
+        root, text=f"{APP_TITLE} v{__version__} kuruluyor", bg=BG, fg=TEXT, font=("Segoe UI", 10, "bold")
     ).pack(padx=18, pady=(14, 4))
     bar = ttk.Progressbar(root, orient="horizontal", length=320, mode="indeterminate")
     bar.pack(padx=18, pady=6)

@@ -4,6 +4,10 @@ Standart AHU yaziliminin **tam acik** Modbus ve BACnet register listelerini,
 cihazda gercekten bulunan sensör ve fan konfigürasyonuna göre filtreleyip
 cihaza özel Excel listeleri üreten Windows masaüstü programi.
 
+Arayüz koyu temalidir (Qoder benzeri koyu zemin + yesil vurgu); uygulama ikonu
+programin mantigini tasir: register satirlari, filtre hunisi ve onay isareti
+(`assets/app.ico`, EXE'ye PyInstaller ile gomulur).
+
 ## Kullanim (adim adim, yukaridan asagiya)
 
 1. **1. Sicaklik Sensorleri** – liste standart Excel'den okunur, cihazda olmayan
