@@ -5,7 +5,7 @@ cihazda gercekten bulunan sensör ve fan konfigürasyonuna göre filtreleyip
 cihaza özel Excel listeleri üreten Windows masaüstü programi.
 
 Arayüz koyu temalidir (Qoder benzeri koyu zemin + yesil vurgu); uygulama ikonu
-programin mantigini tasir: register satirlari, filtre hunisi ve onay isareti
+programin mantigini tasir: register tablosu, secili yesil sutun ve onay rozeti
 (`assets/app.ico`, EXE'ye PyInstaller ile gomulur).
 
 ## Kullanim (adim adim, yukaridan asagiya)
